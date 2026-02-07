@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFile } from 'fs';
+import { readFile } from 'fs/promises';
 import { Lexer } from './dist/lexer/Lexer';
 import { Parser } from './dist/parser/Parser';
 import { SemanticAnalyzer } from './dist/semantic/SemanticAnalyzer';
@@ -12,7 +12,7 @@ import { prettyPrintIR } from './dist/codegen/IR';
 /**
  * C Compiler Frontend Demo
  * 
- * Usage: node compile.js <source-file>
+ * Usage: node dist/compile.js <source-file>
  * 
  * This script demonstrates the complete C compilation pipeline:
  * 1. Lexical Analysis
@@ -27,8 +27,8 @@ async function main() {
   const args = process.argv.slice(2);
   
   if (args.length !== 1) {
-    console.log('Usage: node compile.js <source-file>');
-    console.log('Example: node compile.js examples/hello.c');
+    console.log('Usage: node dist/compile.js <source-file>');
+    console.log('Example: node dist/compile.js examples/hello.c');
     process.exit(1);
   }
   
