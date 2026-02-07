@@ -358,10 +358,4 @@ int main() {
 
 ---
 
-## 📝 License
-
-See LICENSE file for details
-
----
-
 **Built with modern software engineering practices and comprehensive testing. Ready for production use!** 🥒

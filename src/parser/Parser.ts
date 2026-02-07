@@ -31,6 +31,14 @@ export enum NodeType {
   
   // Types
   TYPE_SPECIFIER = 'TYPE_SPECIFIER',
+  
+  // Assembly
+  ASM_STATEMENT = 'ASM_STATEMENT',
+  
+  // Attributes
+  EXPORT_SYMBOL_STMT = 'EXPORT_SYMBOL_STMT',
+  ATTRIBUTE_STMT = 'ATTRIBUTE_STMT',
+  PREPROCESSOR_STMT = 'PREPROCESSOR_STMT',
 }
 
 export interface ASTNode {
@@ -41,7 +49,7 @@ export interface ASTNode {
 
 export interface ProgramNode extends ASTNode {
   type: NodeType.PROGRAM;
-  declarations: (FunctionDeclarationNode | DeclarationNode)[];
+  declarations: (FunctionDeclarationNode | DeclarationNode | StatementNode)[];
 }
 
 export interface FunctionDeclarationNode extends ASTNode {
@@ -61,6 +69,8 @@ export interface ParameterNode extends ASTNode {
 export interface TypeSpecifierNode extends ASTNode {
   type: NodeType.TYPE_SPECIFIER;
   typeName: string;
+  isPointer: boolean;
+  pointerCount: number;
 }
 
 export interface CompoundStatementNode extends ASTNode {
@@ -73,6 +83,29 @@ export interface DeclarationNode extends ASTNode {
   varType: TypeSpecifierNode;
   name: string;
   initializer?: ExpressionNode;
+}
+
+export interface AsmStatementNode extends ASTNode {
+  type: NodeType.ASM_STATEMENT;
+  assembly: string;
+  isVolatile: boolean;
+}
+
+export interface ExportSymbolNode extends ASTNode {
+  type: NodeType.EXPORT_SYMBOL_STMT;
+  symbol: string;
+}
+
+export interface AttributeNode extends ASTNode {
+  type: NodeType.ATTRIBUTE_STMT;
+  attribute: string;
+  target?: string;
+}
+
+export interface PreprocessorNode extends ASTNode {
+  type: NodeType.PREPROCESSOR_STMT;
+  directive: string;
+  content: string;
 }
 
 export interface AssignmentNode extends ASTNode {
@@ -169,7 +202,11 @@ export type StatementNode =
   | ForStatementNode
   | ReturnStatementNode
   | ExpressionStatementNode
-  | CompoundStatementNode;
+  | CompoundStatementNode
+  | AsmStatementNode
+  | ExportSymbolNode
+  | AttributeNode
+  | PreprocessorNode;
 
 export class Parser {
   private tokens: Token[];
@@ -232,7 +269,22 @@ export class Parser {
         continue;
       }
       
-      if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || this.check(TokenType.VOID)) {
+      // Skip attributes like __init
+      if (this.check(TokenType.INIT)) {
+        this.advance();
+        continue;
+      }
+      
+      // Skip EXPORT_SYMBOL and other kernel directives
+      if (this.check(TokenType.EXPORT_SYMBOL) || this.check(TokenType.ASM)) {
+        const statement = this.parseStatement();
+        if (statement) {
+          declarations.push(statement as any);
+        }
+        continue;
+      }
+      
+      if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || this.check(TokenType.VOID) || this.check(TokenType.STRUCT)) {
         const declaration = this.parseDeclaration();
         if (declaration) {
           declarations.push(declaration);
@@ -264,9 +316,26 @@ export class Parser {
 
   private parseTypeSpecifier(): TypeSpecifierNode {
     const token = this.advance();
+    let typeName = token.value;
+    
+    // Handle struct types
+    if (token.type === TokenType.STRUCT) {
+      this.consume(TokenType.IDENTIFIER, 'Expected struct name');
+      typeName = `struct ${this.previous().value}`;
+    }
+    
+    let pointerCount = 0;
+    
+    // Count pointer modifiers
+    while (this.match(TokenType.MULTIPLY)) {
+      pointerCount++;
+    }
+    
     return {
       type: NodeType.TYPE_SPECIFIER,
-      typeName: token.value,
+      typeName,
+      isPointer: pointerCount > 0,
+      pointerCount,
       line: token.line,
       column: token.column,
     };
@@ -296,6 +365,17 @@ export class Parser {
     if (!this.check(TokenType.RIGHT_PAREN)) {
       do {
         const paramType = this.parseTypeSpecifier();
+        
+        // Handle void parameter (int func(void))
+        if (paramType.typeName === 'void') {
+          // If the next token is not a comma and not a closing paren, 
+          // then this void was not a standalone parameter
+          if (!this.check(TokenType.RIGHT_PAREN)) {
+            throw new Error('void must be the only parameter');
+          }
+          return []; // Return empty parameter list for void
+        }
+        
         const paramName = this.consume(TokenType.IDENTIFIER, 'Expected parameter name');
         parameters.push({
           type: NodeType.PARAMETER,
@@ -354,7 +434,7 @@ export class Parser {
 
   private parseStatement(): StatementNode {
     // Declaration
-    if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || this.check(TokenType.VOID)) {
+    if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || this.check(TokenType.VOID) || this.check(TokenType.STRUCT)) {
       const typeSpecifier = this.parseTypeSpecifier();
       const name = this.consume(TokenType.IDENTIFIER, 'Expected identifier after type');
       return this.parseVariableDeclaration(typeSpecifier, name.value);
@@ -378,6 +458,27 @@ export class Parser {
     // Return statement
     if (this.match(TokenType.RETURN)) {
       return this.parseReturnStatement();
+    }
+    
+    // Inline assembly
+    if (this.match(TokenType.ASM)) {
+      return this.parseAsmStatement();
+    }
+    
+    // EXPORT_SYMBOL
+    if (this.match(TokenType.EXPORT_SYMBOL)) {
+      return this.parseExportSymbol();
+    }
+    
+    // Attributes like __init - skip for now and let next declaration handle it
+    if (this.match(TokenType.INIT)) {
+      // Skip __init attribute and let the next function declaration handle it
+      // This is a simplified approach
+    }
+    
+    // Preprocessor directives
+    if (this.match(TokenType.PREPROCESSOR)) {
+      return this.parsePreprocessor();
     }
     
     // Compound statement
@@ -757,5 +858,66 @@ export class Parser {
     
     this.error(this.peek(), 'Expected expression');
     throw new Error('Unreachable');
+  }
+
+  private parseAsmStatement(): AsmStatementNode {
+    const isVolatile = this.match(TokenType.VOLATILE);
+    this.consume(TokenType.LEFT_PAREN, 'Expected \'(\' after asm');
+    this.consume(TokenType.STRING, 'Expected string literal with assembly code');
+    const assembly = this.previous().value;
+    this.consume(TokenType.RIGHT_PAREN, 'Expected \')\' after assembly');
+    this.consume(TokenType.SEMICOLON, 'Expected \';\' after asm statement');
+    
+    return {
+      type: NodeType.ASM_STATEMENT,
+      assembly: assembly.replace(/^"(.*)"$/, '$1'), // Remove quotes
+      isVolatile,
+      line: this.previous().line,
+      column: this.previous().column,
+    };
+  }
+
+  private parseExportSymbol(): ExportSymbolNode {
+    this.consume(TokenType.LEFT_PAREN, 'Expected \'(\' after EXPORT_SYMBOL');
+    this.consume(TokenType.IDENTIFIER, 'Expected symbol name');
+    const symbol = this.previous().value;
+    this.consume(TokenType.RIGHT_PAREN, 'Expected \')\' after symbol name');
+    this.consume(TokenType.SEMICOLON, 'Expected \';\' after EXPORT_SYMBOL');
+    
+    return {
+      type: NodeType.EXPORT_SYMBOL_STMT,
+      symbol,
+      line: this.previous().line,
+      column: this.previous().column,
+    };
+  }
+
+  private parseAttribute(): AttributeNode {
+    const attribute = this.previous().value;
+    
+    // For now, we'll just consume the next function declaration
+    // In a full implementation, we'd associate this with the following declaration
+    this.consume(TokenType.SEMICOLON, 'Expected \';\' after attribute');
+    
+    return {
+      type: NodeType.ATTRIBUTE_STMT,
+      attribute,
+      line: this.previous().line,
+      column: this.previous().column,
+    };
+  }
+
+  private parsePreprocessor(): PreprocessorNode {
+    const content = this.previous().value;
+    const parts = content.split(/\s+/);
+    const directive = parts[0];
+    
+    return {
+      type: NodeType.PREPROCESSOR_STMT,
+      directive,
+      content: content.substring(1), // Remove #
+      line: this.previous().line,
+      column: this.previous().column,
+    };
   }
 }

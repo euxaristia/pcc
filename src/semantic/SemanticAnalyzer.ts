@@ -497,6 +497,13 @@ export class SemanticAnalyzer {
   }
 
   private parseDataType(typeNode: TypeSpecifierNode): DataType {
+    // Handle pointer types
+    if (typeNode.isPointer) {
+      // For simplicity, treat all pointer types as INT for now
+      // In a full implementation, we'd track actual pointed-to types
+      return DataType.INT;
+    }
+    
     switch (typeNode.typeName) {
       case 'int':
         return DataType.INT;
@@ -505,7 +512,9 @@ export class SemanticAnalyzer {
       case 'void':
         return DataType.VOID;
       default:
-        return DataType.VOID;
+        // Handle struct types and other user-defined types
+        // For now, treat them as INT for compatibility
+        return DataType.INT;
     }
   }
 }
