@@ -67,6 +67,10 @@ export enum TokenType {
   // Preprocessor
   HASH = '#',
   PREPROCESSOR = 'PREPROCESSOR',
+  
+  // Additional operators and keywords
+  TILDE = '~',
+  STATIC = 'static',
 }
 
 export interface Token {
@@ -98,6 +102,7 @@ export class Lexer {
     ['__volatile__', TokenType.VOLATILE],
     ['EXPORT_SYMBOL', TokenType.EXPORT_SYMBOL],
     ['__init', TokenType.INIT],
+    ['static', TokenType.STATIC],
   ]);
 
   constructor(input: string) {
