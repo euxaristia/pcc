@@ -44,7 +44,6 @@ export const X8664CallingConvention: CallingConvention = {
   ],
   calleeSaveRegisters: [
     { name: 'rbx', number: 0, callerSave: false },
-    { name: 'rbp', number: 1, callerSave: false },
     { name: 'r12', number: 2, callerSave: false },
     { name: 'r13', number: 3, callerSave: false },
     { name: 'r14', number: 4, callerSave: false },
