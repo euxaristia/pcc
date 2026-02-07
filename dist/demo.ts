@@ -7,12 +7,23 @@ import { IRGenerator } from './codegen/IRGenerator';
 import { generateX8664Assembly } from './codegen/AssemblyGenerator';
 import { generateELFObjectFile } from './codegen/ELFGenerator';
 
+import { readFile } from 'fs/promises';
+
 async function main() {
-  const code = `
-int main() {
-    return 42;
-}
-`;
+  const args = process.argv.slice(2);
+  
+  if (args.length === 0) {
+    console.log('Usage: node dist/demo.js <source-file>');
+    console.log('Example: node dist/demo.js simple-kernel.c');
+    process.exit(1);
+  }
+  
+  const filePath = args[0];
+  const code = await readFile(filePath, 'utf-8');
+  
+  console.log('=== C Compiler Pipeline Demo ===');
+  console.log(`\n=== Source File: ${filePath} ===`);
+  console.log(`\n=== Source Code ===\n${code}`);
 
   console.log('=== C Compiler Pipeline Demo ===');
   

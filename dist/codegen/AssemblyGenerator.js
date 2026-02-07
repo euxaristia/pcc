@@ -5,8 +5,6 @@ exports.generateX8664Assembly = generateX8664Assembly;
 const IR_1 = require("./IR");
 const TargetArchitecture_1 = require("./TargetArchitecture");
 class X8664AssemblyGenerator {
-    instructionSelector;
-    assemblyProgram;
     constructor() {
         this.instructionSelector = new TargetArchitecture_1.InstructionSelector(TargetArchitecture_1.X8664CallingConvention);
         this.assemblyProgram = {
@@ -260,4 +258,3 @@ function generateX8664Assembly(module) {
     const assemblyProgram = generator.generate(module);
     return generator.formatAssembly();
 }
-//# sourceMappingURL=AssemblyGenerator.js.map

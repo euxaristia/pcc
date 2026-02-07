@@ -243,4 +243,3 @@ int compute(int x, int y) {
         });
     });
 });
-//# sourceMappingURL=irgeneration.test.js.map

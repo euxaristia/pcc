@@ -109,10 +109,6 @@ export class Lexer {
 
   private skipWhitespace(): void {
     while (/\s/.test(this.peek()) && this.peek() !== '\0') {
-      if (this.peek() === '\n') {
-        this.advance();
-        return;
-      }
       this.advance();
     }
   }

@@ -3,10 +3,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ELFGenerator = void 0;
 exports.generateELFObjectFile = generateELFObjectFile;
 class ELFGenerator {
-    sections = [];
-    symbols = [];
-    stringTable = new Map();
     constructor() {
+        this.sections = [];
+        this.symbols = [];
+        this.stringTable = new Map();
         this.initializeSections();
     }
     initializeSections() {
@@ -390,4 +390,3 @@ function generateELFObjectFile(assemblyProgram) {
     const generator = new ELFGenerator();
     return generator.generateObjectFile(assemblyProgram);
 }
-//# sourceMappingURL=ELFGenerator.js.map

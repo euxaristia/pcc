@@ -32,9 +32,8 @@ var NodeType;
     NodeType["TYPE_SPECIFIER"] = "TYPE_SPECIFIER";
 })(NodeType || (exports.NodeType = NodeType = {}));
 class Parser {
-    tokens;
-    current = 0;
     constructor(tokens) {
+        this.current = 0;
         this.tokens = tokens;
     }
     peek() {
@@ -533,4 +532,3 @@ class Parser {
     }
 }
 exports.Parser = Parser;
-//# sourceMappingURL=Parser.js.map

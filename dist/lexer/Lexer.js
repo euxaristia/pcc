@@ -60,22 +60,21 @@ var TokenType;
     TokenType["WHITESPACE"] = "WHITESPACE";
 })(TokenType || (exports.TokenType = TokenType = {}));
 class Lexer {
-    input;
-    position = 0;
-    line = 1;
-    column = 1;
-    keywords = new Map([
-        ['int', TokenType.INT],
-        ['char', TokenType.CHAR],
-        ['void', TokenType.VOID],
-        ['if', TokenType.IF],
-        ['else', TokenType.ELSE],
-        ['while', TokenType.WHILE],
-        ['for', TokenType.FOR],
-        ['return', TokenType.RETURN],
-        ['struct', TokenType.STRUCT],
-    ]);
     constructor(input) {
+        this.position = 0;
+        this.line = 1;
+        this.column = 1;
+        this.keywords = new Map([
+            ['int', TokenType.INT],
+            ['char', TokenType.CHAR],
+            ['void', TokenType.VOID],
+            ['if', TokenType.IF],
+            ['else', TokenType.ELSE],
+            ['while', TokenType.WHILE],
+            ['for', TokenType.FOR],
+            ['return', TokenType.RETURN],
+            ['struct', TokenType.STRUCT],
+        ]);
         this.input = input;
     }
     peek(offset = 0) {
@@ -96,10 +95,6 @@ class Lexer {
     }
     skipWhitespace() {
         while (/\s/.test(this.peek()) && this.peek() !== '\0') {
-            if (this.peek() === '\n') {
-                this.advance();
-                return;
-            }
             this.advance();
         }
     }
@@ -280,4 +275,3 @@ class Lexer {
     }
 }
 exports.Lexer = Lexer;
-//# sourceMappingURL=Lexer.js.map

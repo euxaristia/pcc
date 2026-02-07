@@ -7,12 +7,19 @@ const SemanticAnalyzer_1 = require("./semantic/SemanticAnalyzer");
 const IRGenerator_1 = require("./codegen/IRGenerator");
 const AssemblyGenerator_1 = require("./codegen/AssemblyGenerator");
 const ELFGenerator_1 = require("./codegen/ELFGenerator");
+const promises_1 = require("fs/promises");
 async function main() {
-    const code = `
-int main() {
-    return 42;
-}
-`;
+    const args = process.argv.slice(2);
+    if (args.length === 0) {
+        console.log('Usage: node dist/demo.js <source-file>');
+        console.log('Example: node dist/demo.js simple-kernel.c');
+        process.exit(1);
+    }
+    const filePath = args[0];
+    const code = await (0, promises_1.readFile)(filePath, 'utf-8');
+    console.log('=== C Compiler Pipeline Demo ===');
+    console.log(`\n=== Source File: ${filePath} ===`);
+    console.log(`\n=== Source Code ===\n${code}`);
     console.log('=== C Compiler Pipeline Demo ===');
     // Phase 1: Lexical Analysis
     console.log('\n1. Lexical Analysis');

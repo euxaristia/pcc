@@ -35,10 +35,9 @@ exports.X8664CallingConvention = {
     stackAlignment: 16,
 };
 class RegisterAllocator {
-    allocatedRegisters = new Set();
-    variableRegisters = new Map();
-    callingConvention;
     constructor(callingConvention) {
+        this.allocatedRegisters = new Set();
+        this.variableRegisters = new Map();
         this.callingConvention = callingConvention;
     }
     allocateRegister(valueId) {
@@ -69,10 +68,9 @@ class RegisterAllocator {
 }
 exports.RegisterAllocator = RegisterAllocator;
 class StackManager {
-    nextOffset = 0;
-    slots = new Map();
-    callingConvention;
     constructor(callingConvention) {
+        this.nextOffset = 0;
+        this.slots = new Map();
         this.callingConvention = callingConvention;
     }
     allocateStackSpace(name, size) {
@@ -103,9 +101,6 @@ class StackManager {
 }
 exports.StackManager = StackManager;
 class InstructionSelector {
-    registerAllocator;
-    stackManager;
-    callingConvention;
     constructor(callingConvention) {
         this.callingConvention = callingConvention;
         this.registerAllocator = new RegisterAllocator(callingConvention);
@@ -337,4 +332,3 @@ class InstructionSelector {
     }
 }
 exports.InstructionSelector = InstructionSelector;
-//# sourceMappingURL=TargetArchitecture.js.map

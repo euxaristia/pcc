@@ -3,7 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TypeChecker = void 0;
 const SymbolTable_1 = require("./SymbolTable");
 class TypeChecker {
-    functionSignatures = new Map();
+    constructor() {
+        this.functionSignatures = new Map();
+    }
     checkCompatible(left, right, operator) {
         // Assignment and most binary operations require compatible types
         if (operator === '=') {
@@ -87,4 +89,3 @@ class TypeChecker {
     }
 }
 exports.TypeChecker = TypeChecker;
-//# sourceMappingURL=TypeChecker.js.map

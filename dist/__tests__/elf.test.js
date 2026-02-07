@@ -242,4 +242,3 @@ int main() {
         });
     });
 });
-//# sourceMappingURL=elf.test.js.map

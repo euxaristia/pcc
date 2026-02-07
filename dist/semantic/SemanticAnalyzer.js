@@ -5,11 +5,9 @@ const Parser_1 = require("../parser/Parser");
 const SymbolTable_1 = require("./SymbolTable");
 const TypeChecker_1 = require("./TypeChecker");
 class SemanticAnalyzer {
-    symbolTable;
-    typeChecker;
-    errors = [];
-    currentFunction = null;
     constructor() {
+        this.errors = [];
+        this.currentFunction = null;
         this.symbolTable = new SymbolTable_1.SymbolTable();
         this.typeChecker = new TypeChecker_1.TypeChecker();
     }
@@ -430,4 +428,3 @@ class SemanticAnalyzer {
     }
 }
 exports.SemanticAnalyzer = SemanticAnalyzer;
-//# sourceMappingURL=SemanticAnalyzer.js.map

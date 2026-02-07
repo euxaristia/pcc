@@ -4,8 +4,6 @@ exports.IRGenerator = void 0;
 const Parser_1 = require("../parser/Parser");
 const IR_1 = require("./IR");
 class IRGenerator {
-    context;
-    module;
     constructor() {
         this.context = {
             currentFunction: null,
@@ -484,4 +482,3 @@ class IRGenerator {
     }
 }
 exports.IRGenerator = IRGenerator;
-//# sourceMappingURL=IRGenerator.js.map

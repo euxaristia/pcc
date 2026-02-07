@@ -8,8 +8,10 @@ var DataType;
     DataType["VOID"] = "void";
 })(DataType || (exports.DataType = DataType = {}));
 class SymbolTable {
-    symbols = new Map();
-    scopeLevel = 0;
+    constructor() {
+        this.symbols = new Map();
+        this.scopeLevel = 0;
+    }
     enterScope() {
         this.scopeLevel++;
     }
@@ -53,4 +55,3 @@ class SymbolTable {
     }
 }
 exports.SymbolTable = SymbolTable;
-//# sourceMappingURL=SymbolTable.js.map
