@@ -1,4 +1,4 @@
-# 🚀 PCC - Professional C Compiler
+# 🥒 Pickle C Compiler
 
 A complete C compiler implementation with modern software engineering practices, built in TypeScript for x86-64 Linux.
 
@@ -122,18 +122,17 @@ for file in *.c; do
 done
 
 # With verbose output
-PCC_VERBOSE=1 ./dist/compile.js program.c
+PICKLE_VERBOSE=1 ./dist/compile.js program.c
 
 # Only generate IR
-PCC_OUTPUT=ir ./dist/compile.js program.c
+PICKLE_OUTPUT=ir ./dist/compile.js program.c
 
 # Only generate assembly  
-PCC_OUTPUT=asm ./dist/compile.js program.c
-```
+PICKLE_OUTPUT=asm ./dist/compile.js program.c
 
 ### Environment Variables
-- `PCC_VERBOSE` - Enable verbose output
-- `PCC_OUTPUT` - Output format (`elf`, `asm`, `ir`)
+- `PICKLE_VERBOSE` - Enable verbose output
+- `PICKLE_OUTPUT` - Output format (`elf`, `asm`, `ir`)
 
 ---
 
@@ -361,8 +360,8 @@ int main() {
 
 ## 📝 License
 
-MIT License - see LICENSE file for details
+See LICENSE file for details
 
 ---
 
-**Built with modern software engineering practices and comprehensive testing. Ready for production use!** 🚀
+**Built with modern software engineering practices and comprehensive testing. Ready for production use!** 🥒
