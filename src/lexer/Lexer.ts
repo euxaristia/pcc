@@ -18,6 +18,12 @@ export enum TokenType {
   EXPORT_SYMBOL = 'EXPORT_SYMBOL',
   INIT = '__init',
   SIZEOF = 'sizeof',
+  TYPEDEF = 'typedef',
+  SWITCH = 'switch',
+  CASE = 'case',
+  DEFAULT = 'default',
+  BREAK = 'break',
+  CONTINUE = 'continue',
   
   // Identifiers and literals
   IDENTIFIER = 'IDENTIFIER',
@@ -113,6 +119,12 @@ export class Lexer {
     ['__init', TokenType.INIT],
     ['static', TokenType.STATIC],
     ['sizeof', TokenType.SIZEOF],
+    ['typedef', TokenType.TYPEDEF],
+    ['switch', TokenType.SWITCH],
+    ['case', TokenType.CASE],
+    ['default', TokenType.DEFAULT],
+    ['break', TokenType.BREAK],
+    ['continue', TokenType.CONTINUE],
   ]);
 
   constructor(input: string) {

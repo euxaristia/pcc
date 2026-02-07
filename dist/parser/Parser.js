@@ -44,10 +44,19 @@ var NodeType;
     NodeType["ARRAY_ACCESS"] = "ARRAY_ACCESS";
     // Member access
     NodeType["MEMBER_ACCESS"] = "MEMBER_ACCESS";
+    // Typedef
+    NodeType["TYPEDEF_DECLARATION"] = "TYPEDEF_DECLARATION";
+    // Control flow
+    NodeType["SWITCH_STATEMENT"] = "SWITCH_STATEMENT";
+    NodeType["CASE_STATEMENT"] = "CASE_STATEMENT";
+    NodeType["DEFAULT_STATEMENT"] = "DEFAULT_STATEMENT";
+    NodeType["BREAK_STATEMENT"] = "BREAK_STATEMENT";
+    NodeType["CONTINUE_STATEMENT"] = "CONTINUE_STATEMENT";
 })(NodeType || (exports.NodeType = NodeType = {}));
 class Parser {
     constructor(tokens) {
         this.current = 0;
+        this.typedefs = new Map();
         this.tokens = tokens;
     }
     peek() {
@@ -160,6 +169,22 @@ class Parser {
     parseTypeSpecifier() {
         const token = this.advance();
         let typeName = token.value;
+        // Check for typedef alias
+        if (token.type === Lexer_1.TokenType.IDENTIFIER && this.typedefs.has(token.value)) {
+            const typedefType = this.typedefs.get(token.value);
+            let pointerCount = 0;
+            while (this.match(Lexer_1.TokenType.MULTIPLY)) {
+                pointerCount++;
+            }
+            return {
+                type: NodeType.TYPE_SPECIFIER,
+                typeName: typedefType.typeName,
+                isPointer: typedefType.isPointer || pointerCount > 0,
+                pointerCount: typedefType.pointerCount + pointerCount,
+                line: token.line,
+                column: token.column,
+            };
+        }
         // Handle struct types
         if (token.type === Lexer_1.TokenType.STRUCT) {
             this.consume(Lexer_1.TokenType.IDENTIFIER, 'Expected struct name');
@@ -351,6 +376,32 @@ class Parser {
             const typeSpecifier = this.parseTypeSpecifier();
             const name = this.consume(Lexer_1.TokenType.IDENTIFIER, 'Expected identifier after type');
             return this.parseVariableDeclaration(typeSpecifier, name.value);
+        }
+        // Typedef
+        if (this.match(Lexer_1.TokenType.TYPEDEF)) {
+            return this.parseTypedef();
+        }
+        // Switch statement
+        if (this.match(Lexer_1.TokenType.SWITCH)) {
+            return this.parseSwitchStatement();
+        }
+        // Break statement
+        if (this.match(Lexer_1.TokenType.BREAK)) {
+            this.consume(Lexer_1.TokenType.SEMICOLON, "Expected ';' after break");
+            return {
+                type: NodeType.BREAK_STATEMENT,
+                line: this.previous().line,
+                column: this.previous().column,
+            };
+        }
+        // Continue statement
+        if (this.match(Lexer_1.TokenType.CONTINUE)) {
+            this.consume(Lexer_1.TokenType.SEMICOLON, "Expected ';' after continue");
+            return {
+                type: NodeType.CONTINUE_STATEMENT,
+                line: this.previous().line,
+                column: this.previous().column,
+            };
         }
         // If statement
         if (this.match(Lexer_1.TokenType.IF)) {
@@ -919,6 +970,91 @@ class Parser {
             content: content.substring(1), // Remove #
             line: this.previous().line,
             column: this.previous().column,
+        };
+    }
+    parseTypedef() {
+        const line = this.previous().line;
+        const column = this.previous().column;
+        // Parse the original type
+        const originalType = this.parseTypeSpecifier();
+        // Get the alias name
+        const aliasToken = this.consume(Lexer_1.TokenType.IDENTIFIER, 'Expected typedef alias name');
+        const alias = aliasToken.value;
+        this.consume(Lexer_1.TokenType.SEMICOLON, "Expected ';' after typedef");
+        // Store the typedef mapping
+        this.typedefs.set(alias, originalType);
+        return {
+            type: NodeType.TYPEDEF_DECLARATION,
+            originalType,
+            alias,
+            line,
+            column,
+        };
+    }
+    parseSwitchStatement() {
+        const line = this.previous().line;
+        const column = this.previous().column;
+        this.consume(Lexer_1.TokenType.LEFT_PAREN, "Expected '(' after switch");
+        const expression = this.parseExpression();
+        this.consume(Lexer_1.TokenType.RIGHT_PAREN, "Expected ')' after switch expression");
+        this.consume(Lexer_1.TokenType.LEFT_BRACE, "Expected '{' to start switch body");
+        const cases = [];
+        let defaultCase;
+        while (!this.check(Lexer_1.TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+            if (this.check(Lexer_1.TokenType.NEWLINE)) {
+                this.advance();
+                continue;
+            }
+            if (this.match(Lexer_1.TokenType.CASE)) {
+                const caseValue = this.parseExpression();
+                this.consume(Lexer_1.TokenType.COLON, "Expected ':' after case value");
+                const caseStatements = [];
+                while (!this.check(Lexer_1.TokenType.CASE) && !this.check(Lexer_1.TokenType.DEFAULT) &&
+                    !this.check(Lexer_1.TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+                    if (this.check(Lexer_1.TokenType.NEWLINE)) {
+                        this.advance();
+                        continue;
+                    }
+                    caseStatements.push(this.parseStatement());
+                }
+                cases.push({
+                    type: NodeType.CASE_STATEMENT,
+                    value: caseValue,
+                    statements: caseStatements,
+                    line: caseValue.line,
+                    column: caseValue.column,
+                });
+            }
+            else if (this.match(Lexer_1.TokenType.DEFAULT)) {
+                this.consume(Lexer_1.TokenType.COLON, "Expected ':' after default");
+                const defaultStatements = [];
+                while (!this.check(Lexer_1.TokenType.CASE) && !this.check(Lexer_1.TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+                    if (this.check(Lexer_1.TokenType.NEWLINE)) {
+                        this.advance();
+                        continue;
+                    }
+                    defaultStatements.push(this.parseStatement());
+                }
+                defaultCase = {
+                    type: NodeType.DEFAULT_STATEMENT,
+                    statements: defaultStatements,
+                    line: this.previous().line,
+                    column: this.previous().column,
+                };
+            }
+            else {
+                // Regular statement in switch (error in C, but we'll allow it for now)
+                this.parseStatement();
+            }
+        }
+        this.consume(Lexer_1.TokenType.RIGHT_BRACE, "Expected '}' to end switch body");
+        return {
+            type: NodeType.SWITCH_STATEMENT,
+            expression,
+            cases,
+            defaultCase,
+            line,
+            column,
         };
     }
 }

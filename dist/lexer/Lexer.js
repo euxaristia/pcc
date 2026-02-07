@@ -22,6 +22,12 @@ var TokenType;
     TokenType["EXPORT_SYMBOL"] = "EXPORT_SYMBOL";
     TokenType["INIT"] = "__init";
     TokenType["SIZEOF"] = "sizeof";
+    TokenType["TYPEDEF"] = "typedef";
+    TokenType["SWITCH"] = "switch";
+    TokenType["CASE"] = "case";
+    TokenType["DEFAULT"] = "default";
+    TokenType["BREAK"] = "break";
+    TokenType["CONTINUE"] = "continue";
     // Identifiers and literals
     TokenType["IDENTIFIER"] = "IDENTIFIER";
     TokenType["NUMBER"] = "NUMBER";
@@ -101,6 +107,12 @@ class Lexer {
             ['__init', TokenType.INIT],
             ['static', TokenType.STATIC],
             ['sizeof', TokenType.SIZEOF],
+            ['typedef', TokenType.TYPEDEF],
+            ['switch', TokenType.SWITCH],
+            ['case', TokenType.CASE],
+            ['default', TokenType.DEFAULT],
+            ['break', TokenType.BREAK],
+            ['continue', TokenType.CONTINUE],
         ]);
         this.input = input;
     }

@@ -51,6 +51,16 @@ export enum NodeType {
   
   // Member access
   MEMBER_ACCESS = 'MEMBER_ACCESS',
+  
+  // Typedef
+  TYPEDEF_DECLARATION = 'TYPEDEF_DECLARATION',
+  
+  // Control flow
+  SWITCH_STATEMENT = 'SWITCH_STATEMENT',
+  CASE_STATEMENT = 'CASE_STATEMENT',
+  DEFAULT_STATEMENT = 'DEFAULT_STATEMENT',
+  BREAK_STATEMENT = 'BREAK_STATEMENT',
+  CONTINUE_STATEMENT = 'CONTINUE_STATEMENT',
 }
 
 export interface ASTNode {
@@ -118,6 +128,38 @@ export interface PreprocessorNode extends ASTNode {
   type: NodeType.PREPROCESSOR_STMT;
   directive: string;
   content: string;
+}
+
+export interface TypedefDeclarationNode extends ASTNode {
+  type: NodeType.TYPEDEF_DECLARATION;
+  originalType: TypeSpecifierNode;
+  alias: string;
+}
+
+export interface SwitchStatementNode extends ASTNode {
+  type: NodeType.SWITCH_STATEMENT;
+  expression: ExpressionNode;
+  cases: CaseStatementNode[];
+  defaultCase?: DefaultStatementNode;
+}
+
+export interface CaseStatementNode extends ASTNode {
+  type: NodeType.CASE_STATEMENT;
+  value: ExpressionNode;
+  statements: StatementNode[];
+}
+
+export interface DefaultStatementNode extends ASTNode {
+  type: NodeType.DEFAULT_STATEMENT;
+  statements: StatementNode[];
+}
+
+export interface BreakStatementNode extends ASTNode {
+  type: NodeType.BREAK_STATEMENT;
+}
+
+export interface ContinueStatementNode extends ASTNode {
+  type: NodeType.CONTINUE_STATEMENT;
 }
 
 export interface AssignmentNode extends ASTNode {
@@ -246,7 +288,13 @@ export type StatementNode =
   | AsmStatementNode
   | ExportSymbolNode
   | AttributeNode
-  | PreprocessorNode;
+  | PreprocessorNode
+  | TypedefDeclarationNode
+  | SwitchStatementNode
+  | CaseStatementNode
+  | DefaultStatementNode
+  | BreakStatementNode
+  | ContinueStatementNode;
 
 export class Parser {
   private tokens: Token[];
@@ -377,6 +425,23 @@ export class Parser {
   private parseTypeSpecifier(): TypeSpecifierNode {
     const token = this.advance();
     let typeName = token.value;
+    
+    // Check for typedef alias
+    if (token.type === TokenType.IDENTIFIER && this.typedefs.has(token.value)) {
+      const typedefType = this.typedefs.get(token.value)!;
+      let pointerCount = 0;
+      while (this.match(TokenType.MULTIPLY)) {
+        pointerCount++;
+      }
+      return {
+        type: NodeType.TYPE_SPECIFIER,
+        typeName: typedefType.typeName,
+        isPointer: typedefType.isPointer || pointerCount > 0,
+        pointerCount: typedefType.pointerCount + pointerCount,
+        line: token.line,
+        column: token.column,
+      };
+    }
     
     // Handle struct types
     if (token.type === TokenType.STRUCT) {
@@ -591,6 +656,8 @@ export class Parser {
     };
   }
 
+  private typedefs: Map<string, TypeSpecifierNode> = new Map();
+
   private parseStatement(): StatementNode {
     // Declaration
     if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || this.check(TokenType.VOID) || 
@@ -599,6 +666,36 @@ export class Parser {
       const typeSpecifier = this.parseTypeSpecifier();
       const name = this.consume(TokenType.IDENTIFIER, 'Expected identifier after type');
       return this.parseVariableDeclaration(typeSpecifier, name.value);
+    }
+    
+    // Typedef
+    if (this.match(TokenType.TYPEDEF)) {
+      return this.parseTypedef();
+    }
+    
+    // Switch statement
+    if (this.match(TokenType.SWITCH)) {
+      return this.parseSwitchStatement();
+    }
+    
+    // Break statement
+    if (this.match(TokenType.BREAK)) {
+      this.consume(TokenType.SEMICOLON, "Expected ';' after break");
+      return {
+        type: NodeType.BREAK_STATEMENT,
+        line: this.previous().line,
+        column: this.previous().column,
+      };
+    }
+    
+    // Continue statement
+    if (this.match(TokenType.CONTINUE)) {
+      this.consume(TokenType.SEMICOLON, "Expected ';' after continue");
+      return {
+        type: NodeType.CONTINUE_STATEMENT,
+        line: this.previous().line,
+        column: this.previous().column,
+      };
     }
     
     // If statement
@@ -1242,6 +1339,107 @@ export class Parser {
       content: content.substring(1), // Remove #
       line: this.previous().line,
       column: this.previous().column,
+    };
+  }
+
+  private parseTypedef(): TypedefDeclarationNode {
+    const line = this.previous().line;
+    const column = this.previous().column;
+    
+    // Parse the original type
+    const originalType = this.parseTypeSpecifier();
+    
+    // Get the alias name
+    const aliasToken = this.consume(TokenType.IDENTIFIER, 'Expected typedef alias name');
+    const alias = aliasToken.value;
+    
+    this.consume(TokenType.SEMICOLON, "Expected ';' after typedef");
+    
+    // Store the typedef mapping
+    this.typedefs.set(alias, originalType);
+    
+    return {
+      type: NodeType.TYPEDEF_DECLARATION,
+      originalType,
+      alias,
+      line,
+      column,
+    };
+  }
+
+  private parseSwitchStatement(): SwitchStatementNode {
+    const line = this.previous().line;
+    const column = this.previous().column;
+    
+    this.consume(TokenType.LEFT_PAREN, "Expected '(' after switch");
+    const expression = this.parseExpression();
+    this.consume(TokenType.RIGHT_PAREN, "Expected ')' after switch expression");
+    
+    this.consume(TokenType.LEFT_BRACE, "Expected '{' to start switch body");
+    
+    const cases: CaseStatementNode[] = [];
+    let defaultCase: DefaultStatementNode | undefined;
+    
+    while (!this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+      if (this.check(TokenType.NEWLINE)) {
+        this.advance();
+        continue;
+      }
+      
+      if (this.match(TokenType.CASE)) {
+        const caseValue = this.parseExpression();
+        this.consume(TokenType.COLON, "Expected ':' after case value");
+        
+        const caseStatements: StatementNode[] = [];
+        while (!this.check(TokenType.CASE) && !this.check(TokenType.DEFAULT) && 
+               !this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+          if (this.check(TokenType.NEWLINE)) {
+            this.advance();
+            continue;
+          }
+          caseStatements.push(this.parseStatement());
+        }
+        
+        cases.push({
+          type: NodeType.CASE_STATEMENT,
+          value: caseValue,
+          statements: caseStatements,
+          line: caseValue.line,
+          column: caseValue.column,
+        });
+      } else if (this.match(TokenType.DEFAULT)) {
+        this.consume(TokenType.COLON, "Expected ':' after default");
+        
+        const defaultStatements: StatementNode[] = [];
+        while (!this.check(TokenType.CASE) && !this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+          if (this.check(TokenType.NEWLINE)) {
+            this.advance();
+            continue;
+          }
+          defaultStatements.push(this.parseStatement());
+        }
+        
+        defaultCase = {
+          type: NodeType.DEFAULT_STATEMENT,
+          statements: defaultStatements,
+          line: this.previous().line,
+          column: this.previous().column,
+        };
+      } else {
+        // Regular statement in switch (error in C, but we'll allow it for now)
+        this.parseStatement();
+      }
+    }
+    
+    this.consume(TokenType.RIGHT_BRACE, "Expected '}' to end switch body");
+    
+    return {
+      type: NodeType.SWITCH_STATEMENT,
+      expression,
+      cases,
+      defaultCase,
+      line,
+      column,
     };
   }
 }
