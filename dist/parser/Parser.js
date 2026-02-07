@@ -30,6 +30,12 @@ var NodeType;
     NodeType["CHARACTER_LITERAL"] = "CHARACTER_LITERAL";
     // Types
     NodeType["TYPE_SPECIFIER"] = "TYPE_SPECIFIER";
+    // Assembly
+    NodeType["ASM_STATEMENT"] = "ASM_STATEMENT";
+    // Attributes
+    NodeType["EXPORT_SYMBOL_STMT"] = "EXPORT_SYMBOL_STMT";
+    NodeType["ATTRIBUTE_STMT"] = "ATTRIBUTE_STMT";
+    NodeType["PREPROCESSOR_STMT"] = "PREPROCESSOR_STMT";
 })(NodeType || (exports.NodeType = NodeType = {}));
 class Parser {
     constructor(tokens) {
@@ -82,7 +88,20 @@ class Parser {
                 this.advance();
                 continue;
             }
-            if (this.check(Lexer_1.TokenType.INT) || this.check(Lexer_1.TokenType.CHAR) || this.check(Lexer_1.TokenType.VOID)) {
+            // Skip attributes like __init
+            if (this.check(Lexer_1.TokenType.INIT)) {
+                this.advance();
+                continue;
+            }
+            // Skip EXPORT_SYMBOL and other kernel directives
+            if (this.check(Lexer_1.TokenType.EXPORT_SYMBOL) || this.check(Lexer_1.TokenType.ASM)) {
+                const statement = this.parseStatement();
+                if (statement) {
+                    declarations.push(statement);
+                }
+                continue;
+            }
+            if (this.check(Lexer_1.TokenType.INT) || this.check(Lexer_1.TokenType.CHAR) || this.check(Lexer_1.TokenType.VOID) || this.check(Lexer_1.TokenType.STRUCT)) {
                 const declaration = this.parseDeclaration();
                 if (declaration) {
                     declarations.push(declaration);
@@ -113,9 +132,22 @@ class Parser {
     }
     parseTypeSpecifier() {
         const token = this.advance();
+        let typeName = token.value;
+        // Handle struct types
+        if (token.type === Lexer_1.TokenType.STRUCT) {
+            this.consume(Lexer_1.TokenType.IDENTIFIER, 'Expected struct name');
+            typeName = `struct ${this.previous().value}`;
+        }
+        let pointerCount = 0;
+        // Count pointer modifiers
+        while (this.match(Lexer_1.TokenType.MULTIPLY)) {
+            pointerCount++;
+        }
         return {
             type: NodeType.TYPE_SPECIFIER,
-            typeName: token.value,
+            typeName,
+            isPointer: pointerCount > 0,
+            pointerCount,
             line: token.line,
             column: token.column,
         };
@@ -140,6 +172,15 @@ class Parser {
         if (!this.check(Lexer_1.TokenType.RIGHT_PAREN)) {
             do {
                 const paramType = this.parseTypeSpecifier();
+                // Handle void parameter (int func(void))
+                if (paramType.typeName === 'void') {
+                    // If the next token is not a comma and not a closing paren, 
+                    // then this void was not a standalone parameter
+                    if (!this.check(Lexer_1.TokenType.RIGHT_PAREN)) {
+                        throw new Error('void must be the only parameter');
+                    }
+                    return []; // Return empty parameter list for void
+                }
                 const paramName = this.consume(Lexer_1.TokenType.IDENTIFIER, 'Expected parameter name');
                 parameters.push({
                     type: NodeType.PARAMETER,
@@ -187,7 +228,7 @@ class Parser {
     }
     parseStatement() {
         // Declaration
-        if (this.check(Lexer_1.TokenType.INT) || this.check(Lexer_1.TokenType.CHAR) || this.check(Lexer_1.TokenType.VOID)) {
+        if (this.check(Lexer_1.TokenType.INT) || this.check(Lexer_1.TokenType.CHAR) || this.check(Lexer_1.TokenType.VOID) || this.check(Lexer_1.TokenType.STRUCT)) {
             const typeSpecifier = this.parseTypeSpecifier();
             const name = this.consume(Lexer_1.TokenType.IDENTIFIER, 'Expected identifier after type');
             return this.parseVariableDeclaration(typeSpecifier, name.value);
@@ -207,6 +248,23 @@ class Parser {
         // Return statement
         if (this.match(Lexer_1.TokenType.RETURN)) {
             return this.parseReturnStatement();
+        }
+        // Inline assembly
+        if (this.match(Lexer_1.TokenType.ASM)) {
+            return this.parseAsmStatement();
+        }
+        // EXPORT_SYMBOL
+        if (this.match(Lexer_1.TokenType.EXPORT_SYMBOL)) {
+            return this.parseExportSymbol();
+        }
+        // Attributes like __init - skip for now and let next declaration handle it
+        if (this.match(Lexer_1.TokenType.INIT)) {
+            // Skip __init attribute and let the next function declaration handle it
+            // This is a simplified approach
+        }
+        // Preprocessor directives
+        if (this.match(Lexer_1.TokenType.PREPROCESSOR)) {
+            return this.parsePreprocessor();
         }
         // Compound statement
         if (this.check(Lexer_1.TokenType.LEFT_BRACE)) {
@@ -529,6 +587,58 @@ class Parser {
         }
         this.error(this.peek(), 'Expected expression');
         throw new Error('Unreachable');
+    }
+    parseAsmStatement() {
+        const isVolatile = this.match(Lexer_1.TokenType.VOLATILE);
+        this.consume(Lexer_1.TokenType.LEFT_PAREN, 'Expected \'(\' after asm');
+        this.consume(Lexer_1.TokenType.STRING, 'Expected string literal with assembly code');
+        const assembly = this.previous().value;
+        this.consume(Lexer_1.TokenType.RIGHT_PAREN, 'Expected \')\' after assembly');
+        this.consume(Lexer_1.TokenType.SEMICOLON, 'Expected \';\' after asm statement');
+        return {
+            type: NodeType.ASM_STATEMENT,
+            assembly: assembly.replace(/^"(.*)"$/, '$1'), // Remove quotes
+            isVolatile,
+            line: this.previous().line,
+            column: this.previous().column,
+        };
+    }
+    parseExportSymbol() {
+        this.consume(Lexer_1.TokenType.LEFT_PAREN, 'Expected \'(\' after EXPORT_SYMBOL');
+        this.consume(Lexer_1.TokenType.IDENTIFIER, 'Expected symbol name');
+        const symbol = this.previous().value;
+        this.consume(Lexer_1.TokenType.RIGHT_PAREN, 'Expected \')\' after symbol name');
+        this.consume(Lexer_1.TokenType.SEMICOLON, 'Expected \';\' after EXPORT_SYMBOL');
+        return {
+            type: NodeType.EXPORT_SYMBOL_STMT,
+            symbol,
+            line: this.previous().line,
+            column: this.previous().column,
+        };
+    }
+    parseAttribute() {
+        const attribute = this.previous().value;
+        // For now, we'll just consume the next function declaration
+        // In a full implementation, we'd associate this with the following declaration
+        this.consume(Lexer_1.TokenType.SEMICOLON, 'Expected \';\' after attribute');
+        return {
+            type: NodeType.ATTRIBUTE_STMT,
+            attribute,
+            line: this.previous().line,
+            column: this.previous().column,
+        };
+    }
+    parsePreprocessor() {
+        const content = this.previous().value;
+        const parts = content.split(/\s+/);
+        const directive = parts[0];
+        return {
+            type: NodeType.PREPROCESSOR_STMT,
+            directive,
+            content: content.substring(1), // Remove #
+            line: this.previous().line,
+            column: this.previous().column,
+        };
     }
 }
 exports.Parser = Parser;

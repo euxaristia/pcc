@@ -1,7 +1,36 @@
-export enum DataType {
+export enum BaseType {
   INT = 'int',
   CHAR = 'char',
   VOID = 'void',
+  STRUCT = 'struct',
+}
+
+export interface DataType {
+  baseType: BaseType;
+  isPointer: boolean;
+  pointerCount: number;
+  structName?: string;
+}
+
+export const BuiltinTypes = {
+  INT: { baseType: BaseType.INT, isPointer: false, pointerCount: 0 } as DataType,
+  CHAR: { baseType: BaseType.CHAR, isPointer: false, pointerCount: 0 } as DataType,
+  VOID: { baseType: BaseType.VOID, isPointer: false, pointerCount: 0 } as DataType,
+};
+
+export function isSameType(a: DataType, b: DataType): boolean {
+  return a.baseType === b.baseType && 
+         a.isPointer === b.isPointer && 
+         a.pointerCount === b.pointerCount &&
+         a.structName === b.structName;
+}
+
+export function typeToString(type: DataType): string {
+  let str = type.baseType === BaseType.STRUCT ? `struct ${type.structName}` : type.baseType as string;
+  if (type.isPointer) {
+    str += '*'.repeat(type.pointerCount);
+  }
+  return str;
 }
 
 export interface Symbol {

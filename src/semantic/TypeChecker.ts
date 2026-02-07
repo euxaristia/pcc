@@ -1,4 +1,4 @@
-import { DataType } from './SymbolTable';
+import { DataType, isSameType, typeToString, BuiltinTypes, BaseType } from './SymbolTable';
 
 export interface TypeCheckResult {
   type: DataType;
@@ -18,43 +18,64 @@ export class TypeChecker {
   checkCompatible(left: DataType, right: DataType, operator: string): TypeCheckResult {
     // Assignment and most binary operations require compatible types
     if (operator === '=') {
-      if (left === right) {
+      if (isSameType(left, right)) {
         return { type: left, isError: false };
       }
+      
+      // Allow assignment of 0 to any pointer (null pointer)
+      if (left.isPointer && right.baseType === BaseType.INT && !right.isPointer) {
+        return { type: left, isError: false };
+      }
+
       return {
         type: left,
         isError: true,
-        errorMessage: `Cannot assign ${right} to ${left}`,
+        errorMessage: `Cannot assign ${typeToString(right)} to ${typeToString(left)}`,
       };
     }
 
     // Arithmetic operations: both operands must be numeric
     if (['+', '-', '*', '/', '%'].includes(operator)) {
-      if (left === DataType.INT && right === DataType.INT) {
-        return { type: DataType.INT, isError: false };
+      if (isSameType(left, BuiltinTypes.INT) && isSameType(right, BuiltinTypes.INT)) {
+        return { type: BuiltinTypes.INT, isError: false };
       }
+      
+      // Basic pointer arithmetic: ptr + int, ptr - int
+      if (left.isPointer && isSameType(right, BuiltinTypes.INT) && (operator === '+' || operator === '-')) {
+        return { type: left, isError: false };
+      }
+
       return {
-        type: DataType.INT,
+        type: BuiltinTypes.INT,
         isError: true,
-        errorMessage: `Invalid operands to arithmetic operator '${operator}': ${left} and ${right}`,
+        errorMessage: `Invalid operands to arithmetic operator '${operator}': ${typeToString(left)} and ${typeToString(right)}`,
       };
     }
 
     // Comparison operations
     if (['==', '!=', '<', '>', '<=', '>='].includes(operator)) {
-      if (left === right && left !== DataType.VOID) {
-        return { type: DataType.INT, isError: false }; // Comparisons return int (0 or 1)
+      if (isSameType(left, right) && left.baseType !== BaseType.VOID) {
+        return { type: BuiltinTypes.INT, isError: false }; // Comparisons return int (0 or 1)
       }
+      
+      // Allow comparison of pointers with 0
+      if (left.isPointer && isSameType(right, BuiltinTypes.INT)) {
+        return { type: BuiltinTypes.INT, isError: false };
+      }
+      if (right.isPointer && isSameType(left, BuiltinTypes.INT)) {
+        return { type: BuiltinTypes.INT, isError: false };
+      }
+
       return {
-        type: DataType.INT,
+        type: BuiltinTypes.INT,
         isError: true,
-        errorMessage: `Invalid operands to comparison operator '${operator}': ${left} and ${right}`,
+        errorMessage: `Invalid operands to comparison operator '${operator}': ${typeToString(left)} and ${typeToString(right)}`,
       };
     }
 
     // Logical operations
     if (['&&', '||', '!'].includes(operator)) {
-      return { type: DataType.INT, isError: false }; // Logical expressions return int
+      return { type: BuiltinTypes.INT, isError: false }; // Logical expressions return int
     }
 
     return { type: left, isError: false };
@@ -64,7 +85,7 @@ export class TypeChecker {
     const signature = this.functionSignatures.get(name);
     if (!signature) {
       return {
-        type: DataType.VOID,
+        type: BuiltinTypes.VOID,
         isError: true,
         errorMessage: `Function '${name}' not declared`,
       };
@@ -81,11 +102,16 @@ export class TypeChecker {
     for (let i = 0; i < argTypes.length; i++) {
       const expected = signature.parameterTypes[i];
       const actual = argTypes[i];
-      if (expected !== actual) {
+      if (!isSameType(expected, actual)) {
+        // Allow passing 0 to pointer parameter
+        if (expected.isPointer && isSameType(actual, BuiltinTypes.INT)) {
+          continue;
+        }
+
         return {
           type: signature.returnType,
           isError: true,
-          errorMessage: `Parameter ${i + 1} of function '${name}' expects ${expected}, got ${actual}`,
+          errorMessage: `Parameter ${i + 1} of function '${name}' expects ${typeToString(expected)}, got ${typeToString(actual)}`,
         };
       }
     }
@@ -102,9 +128,9 @@ export class TypeChecker {
   }
 
   isValidReturnType(expected: DataType, actual: DataType): boolean {
-    if (expected === DataType.VOID) {
-      return actual === DataType.VOID;
+    if (expected.baseType === BaseType.VOID && !expected.isPointer) {
+      return actual.baseType === BaseType.VOID && !actual.isPointer;
     }
-    return expected === actual;
+    return isSameType(expected, actual);
   }
 }

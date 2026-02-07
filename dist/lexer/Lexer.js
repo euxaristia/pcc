@@ -13,6 +13,10 @@ var TokenType;
     TokenType["FOR"] = "for";
     TokenType["RETURN"] = "return";
     TokenType["STRUCT"] = "struct";
+    TokenType["ASM"] = "asm";
+    TokenType["VOLATILE"] = "volatile";
+    TokenType["EXPORT_SYMBOL"] = "EXPORT_SYMBOL";
+    TokenType["INIT"] = "__init";
     // Identifiers and literals
     TokenType["IDENTIFIER"] = "IDENTIFIER";
     TokenType["NUMBER"] = "NUMBER";
@@ -58,6 +62,12 @@ var TokenType;
     TokenType["EOF"] = "EOF";
     TokenType["NEWLINE"] = "NEWLINE";
     TokenType["WHITESPACE"] = "WHITESPACE";
+    // Preprocessor
+    TokenType["HASH"] = "#";
+    TokenType["PREPROCESSOR"] = "PREPROCESSOR";
+    // Additional operators and keywords
+    TokenType["TILDE"] = "~";
+    TokenType["STATIC"] = "static";
 })(TokenType || (exports.TokenType = TokenType = {}));
 class Lexer {
     constructor(input) {
@@ -74,6 +84,13 @@ class Lexer {
             ['for', TokenType.FOR],
             ['return', TokenType.RETURN],
             ['struct', TokenType.STRUCT],
+            ['asm', TokenType.ASM],
+            ['__asm__', TokenType.ASM],
+            ['volatile', TokenType.VOLATILE],
+            ['__volatile__', TokenType.VOLATILE],
+            ['EXPORT_SYMBOL', TokenType.EXPORT_SYMBOL],
+            ['__init', TokenType.INIT],
+            ['static', TokenType.STATIC],
         ]);
         this.input = input;
     }
@@ -97,6 +114,41 @@ class Lexer {
         while (/\s/.test(this.peek()) && this.peek() !== '\0') {
             this.advance();
         }
+    }
+    skipSingleLineComment() {
+        while (this.peek() !== '\n' && this.peek() !== '\0') {
+            this.advance();
+        }
+    }
+    skipMultiLineComment() {
+        this.advance(); // Skip '*'
+        while (!(this.peek() === '*' && this.peek(1) === '/') && this.peek() !== '\0') {
+            this.advance();
+        }
+        this.advance(); // Skip '*'
+        this.advance(); // Skip '/'
+    }
+    skipPreprocessorDirective() {
+        while (this.peek() !== '\n' && this.peek() !== '\0') {
+            this.advance();
+        }
+    }
+    readPreprocessorDirective() {
+        const start = this.position;
+        const startLine = this.line;
+        const startColumn = this.column;
+        this.advance(); // Skip '#'
+        // Read the rest of the line (until newline or EOF)
+        while (this.peek() !== '\n' && this.peek() !== '\0') {
+            this.advance();
+        }
+        const value = this.input.substring(start, this.position);
+        return {
+            type: TokenType.PREPROCESSOR,
+            value,
+            line: startLine,
+            column: startColumn,
+        };
     }
     readNumber() {
         const start = this.position;
@@ -220,11 +272,18 @@ class Lexer {
             case '}': return TokenType.RIGHT_BRACE;
             case '[': return TokenType.LEFT_BRACKET;
             case ']': return TokenType.RIGHT_BRACKET;
+            case '#': return TokenType.HASH;
             default: throw new Error(`Unknown operator: ${value}`);
         }
     }
     nextToken() {
+        // Skip whitespace first
         this.skipWhitespace();
+        // Check for preprocessor directives at the beginning of line (no leading whitespace)
+        if (this.column === 1 && this.peek() === '#') {
+            this.skipPreprocessorDirective();
+            return this.nextToken();
+        }
         if (this.position >= this.input.length) {
             return {
                 type: TokenType.EOF,
@@ -234,6 +293,15 @@ class Lexer {
             };
         }
         const char = this.peek();
+        // Handle comments
+        if (char === '/' && this.peek(1) === '/') {
+            this.skipSingleLineComment();
+            return this.nextToken();
+        }
+        if (char === '/' && this.peek(1) === '*') {
+            this.skipMultiLineComment();
+            return this.nextToken();
+        }
         // Skip whitespace and call again if we hit whitespace
         if (/\s/.test(char) && char !== '\n') {
             this.skipWhitespace();
@@ -248,7 +316,7 @@ class Lexer {
         if (char === '"' || char === "'") {
             return this.readString(char);
         }
-        if (/[+\-*/%=!<>&|^?:;,.()\[\]{}]/.test(char)) {
+        if (/[+\-*/%=!<>&|^?:;,.()\[\]{}#]/.test(char)) {
             return this.readOperator();
         }
         if (char === '\n') {

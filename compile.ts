@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 import { readFile } from 'fs/promises';
-import { Lexer } from './dist/lexer/Lexer';
-import { Parser } from './dist/parser/Parser';
-import { SemanticAnalyzer } from './dist/semantic/SemanticAnalyzer';
-import { IRGenerator } from './dist/codegen/IRGenerator';
-import { generateX8664Assembly } from './dist/codegen/AssemblyGenerator';
-import { generateELFObjectFile } from './dist/codegen/ELFGenerator';
-import { prettyPrintIR } from './dist/codegen/IR';
+import { Lexer } from './src/lexer/Lexer';
+import { Parser } from './src/parser/Parser';
+import { SemanticAnalyzer } from './src/semantic/SemanticAnalyzer';
+import { IRGenerator } from './src/codegen/IRGenerator';
+import { generateX8664Assembly } from './src/codegen/AssemblyGenerator';
+import { generateELFObjectFile } from './src/codegen/ELFGenerator';
+import { prettyPrintIR } from './src/codegen/IR';
 
 /**
  * C Compiler Frontend Demo

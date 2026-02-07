@@ -3,7 +3,7 @@ import {
   IfStatementNode, WhileStatementNode, ForStatementNode, ReturnStatementNode,
   ExpressionStatementNode, BinaryExpressionNode, UnaryExpressionNode,
   FunctionCallNode, IdentifierNode, NumberLiteralNode, StringLiteralNode,
-  CharacterLiteralNode, NodeType, ExpressionNode, StatementNode
+  CharacterLiteralNode, NodeType, ExpressionNode, StatementNode, TypeSpecifierNode
 } from '../parser/Parser';
 import { DataType } from '../semantic/SymbolTable';
 import {
@@ -204,9 +204,16 @@ export class IRGenerator {
       throw new Error('Assignment outside block');
     }
 
-    const targetAddr = this.context.valueMap.get(assign.target.name);
-    if (!targetAddr) {
-      throw new Error(`Variable ${assign.target.name} not declared`);
+    let targetAddr: IRValue;
+
+    if (assign.target.type === NodeType.IDENTIFIER) {
+      const addr = this.context.valueMap.get(assign.target.name);
+      if (!addr) {
+        throw new Error(`Variable ${assign.target.name} not declared`);
+      }
+      targetAddr = addr;
+    } else {
+      throw new Error('Unsupported assignment target');
     }
 
     const value = this.processExpression(assign.value);
@@ -476,6 +483,34 @@ export class IRGenerator {
       throw new Error('Unary expression outside block');
     }
 
+    // Handle address-of (&) and dereference (*)
+    if (unary.operator === '&') {
+      if (unary.operand.type !== NodeType.IDENTIFIER) {
+        throw new Error('Cannot take address of non-identifier');
+      }
+      const ident = unary.operand as IdentifierNode;
+      const varAddr = this.context.valueMap.get(ident.name);
+      if (!varAddr) {
+        throw new Error(`Variable ${ident.name} not declared`);
+      }
+      return varAddr;
+    }
+
+    if (unary.operator === '*') {
+      const ptrValue = this.processExpression(unary.operand);
+      const resultType = isPointerType((ptrValue as IRValue).type) ? 
+        this.getPointedToType((ptrValue as IRValue).type) : IRType.I32;
+      
+      const loadInstr = createInstruction(
+        this.genId(),
+        IROpCode.LOAD,
+        resultType,
+        [ptrValue]
+      );
+      this.context.currentBlock.instructions.push(loadInstr);
+      return loadInstr as IRValue;
+    }
+
     const operand = this.processExpression(unary.operand);
 
     let opcode: IROpCode;
@@ -488,31 +523,23 @@ export class IRGenerator {
         const incrementValue = unary.operator === '++_post' ? 
           createConstant(1, IRType.I32) : createConstant(-1, IRType.I32);
         
-        const loadInstr = createInstruction(
-          this.genId(),
-          IROpCode.LOAD,
-          (operand as IRValue).type,
-          [operand]
-        );
-        this.context.currentBlock.instructions.push(loadInstr);
-
-        const addInstr = createInstruction(
-          this.genId(),
-          IROpCode.ADD,
-          (operand as IRValue).type,
-          [loadInstr as IRValue, incrementValue]
-        );
-        this.context.currentBlock.instructions.push(addInstr);
-
-        const storeInstr = createInstruction(
-          this.genId(),
-          IROpCode.STORE,
-          IRType.VOID,
-          [addInstr as IRValue, operand]
-        );
-        this.context.currentBlock.instructions.push(storeInstr);
-
-        return loadInstr as IRValue; // Return original value for post-increment
+        if (unary.operand.type === NodeType.IDENTIFIER) {
+          const ident = unary.operand as IdentifierNode;
+          const addr = this.context.valueMap.get(ident.name);
+          if (addr) {
+            const currentVal = createInstruction(this.genId(), IROpCode.LOAD, addr.type, [addr]);
+            this.context.currentBlock.instructions.push(currentVal);
+            
+            const newVal = createInstruction(this.genId(), IROpCode.ADD, addr.type, [currentVal as IRValue, incrementValue]);
+            this.context.currentBlock.instructions.push(newVal);
+            
+            const store = createInstruction(this.genId(), IROpCode.STORE, IRType.VOID, [newVal as IRValue, addr]);
+            this.context.currentBlock.instructions.push(store);
+            
+            return currentVal as IRValue;
+          }
+        }
+        throw new Error('Postfix increment/decrement only supported on identifiers for now');
 
       default:
         throw new Error(`Unsupported unary operator: ${unary.operator}`);
@@ -610,7 +637,11 @@ export class IRGenerator {
   }
 
   private dataTypeToIRType(dataType: DataType): IRType {
-    switch (dataType) {
+    if (dataType.isPointer) {
+      return IRType.PTR;
+    }
+    
+    switch (dataType.baseType) {
       case 'int': return IRType.I32;
       case 'char': return IRType.I8;
       case 'void': return IRType.VOID;
@@ -618,8 +649,29 @@ export class IRGenerator {
     }
   }
 
-  private parseType(typeNode: any): DataType {
-    return typeNode.typeName as DataType;
+  private parseType(typeNode: TypeSpecifierNode): DataType {
+    let baseType: any;
+    let structName: string | undefined;
+
+    if (typeNode.typeName.startsWith('struct ')) {
+      baseType = 'struct';
+      structName = typeNode.typeName.substring(7);
+    } else {
+      baseType = typeNode.typeName;
+    }
+
+    return {
+      baseType,
+      isPointer: typeNode.isPointer,
+      pointerCount: typeNode.pointerCount,
+      structName,
+    };
+  }
+
+  private getPointedToType(ptrType: IRType): IRType {
+    // Simplified: if it's a pointer, it points to I32 for now
+    // A better implementation would store the pointed-to type in IRType
+    return IRType.I32;
   }
 
   private getOperationResultType(opcode: IROpCode, left: IRValue | IRConstant, right: IRValue | IRConstant): IRType {

@@ -99,39 +99,48 @@ export class X8664AssemblyGenerator {
   }
 
   private generateFunction(func: IRFunction): string {
-    let assembly = `.globl ${func.name}\n`;
-    assembly += `${func.name}:\n`;
+    let prologue = `.globl ${func.name}\n`;
+    prologue += `${func.name}:\n`;
 
     // Reset register allocator and stack manager for this function
     this.instructionSelector.getRegisterAllocator().freeAllRegisters();
     this.instructionSelector.getStackManager().reset();
 
-    // Allocate stack space for locals
-    let stackSize = 0;
+    // Allocate stack space for parameters if they are moved to stack (simplified)
+    for (const param of func.parameters) {
+       // parameters are currently handled as locals if they are ALLOCA'd in the IR
+    }
+
+    // Initial stack allocation for declared locals
     for (const local of func.locals) {
       const size = this.getTypeSize(local.type);
       this.instructionSelector.getStackManager().allocateStackSpace(local.name, size);
     }
-    stackSize = this.instructionSelector.getStackManager().getTotalSize();
 
-    // Function prologue
+    // Generate function body first to account for all ALLOCA instructions
+    let bodyAssembly = '';
+    for (const block of func.body) {
+      bodyAssembly += this.generateBlock(block, func);
+    }
+
+    const finalStackSize = this.instructionSelector.getStackManager().getTotalSize();
+
+    // Build the final assembly with correct stack sizes
+    let assembly = prologue;
     assembly += '  push rbp\n';
     assembly += '  mov rsp, rbp\n';
     
-    // Allocate stack space for locals
-    if (stackSize > 0) {
-      assembly += `  sub rsp, ${stackSize}\n`;
+    if (finalStackSize > 0) {
+      assembly += `  sub rsp, ${finalStackSize}\n`;
     }
 
-    // Save callee-save registers if needed
+    // Save callee-save registers
     for (const reg of X8664CallingConvention.calleeSaveRegisters) {
       assembly += `  push ${reg.name}\n`;
     }
 
-    // Generate function body
-    for (const block of func.body) {
-      assembly += this.generateBlock(block, func);
-    }
+    // Add the already generated body
+    assembly += bodyAssembly;
 
     return assembly;
   }
@@ -150,7 +159,7 @@ export class X8664AssemblyGenerator {
       // Check if it's a stack location
       const stackSlot = this.instructionSelector.getStackManager().getStackSlot(valueId);
       if (stackSlot) {
-        return `[rbp - ${stackSlot.offset}]`;
+        return `[rbp - ${stackSlot.offset + this.getTypeSize(IRType.PTR)}]`; // +8 to skip saved RBP
       }
 
       // Check if it's a function parameter
@@ -162,8 +171,6 @@ export class X8664AssemblyGenerator {
         }
       }
 
-      // Check if it's a global variable (check globals from module)
-      // For now, assume unknown identifiers are globals
       return `[${valueId}]`;
     };
 
@@ -174,7 +181,7 @@ export class X8664AssemblyGenerator {
         
         // Handle special instructions
         if (irInstr.opcode === IROpCode.ALLOCA) {
-          // Stack allocation - allocate space for the variable
+          // Stack allocation
           const stackSlot = this.instructionSelector.getStackManager().allocateStackSpace(
             irInstr.id,
             this.getTypeSize(irInstr.type)
@@ -182,7 +189,9 @@ export class X8664AssemblyGenerator {
           // Register the stack location
           const reg = this.instructionSelector.getRegisterAllocator().allocateRegister(irInstr.id);
           if (reg) {
-            assembly += `  lea [rbp - ${stackSlot.offset}], ${reg.name}\n`;
+             // Offset is from RBP, so it should be negative
+             // +8 to skip saved RBP
+            assembly += `  lea [rbp - ${stackSlot.offset + this.getTypeSize(IRType.PTR)}], ${reg.name}\n`;
           }
           continue;
         }
@@ -192,56 +201,39 @@ export class X8664AssemblyGenerator {
         assembly += instrAssembly.map(line => `  ${line}`).join('\n') + '\n';
         
         // Free the register for this instruction result
-        if (irInstr.opcode !== IROpCode.LOAD && irInstr.opcode !== (IROpCode.ALLOCA as any)) {
+        if (irInstr.opcode !== IROpCode.LOAD) {
           this.instructionSelector.getRegisterAllocator().freeRegister(irInstr.id);
         }
       } else if ('target' in instr) {
-        // Unconditional jump
         const jump = instr as IRJump;
         assembly += `  jmp ${jump.target}\n`;
       } else if ('condition' in instr) {
-        // Conditional jump
         const jump = instr as IRJumpIf;
         const condLocation = getValueLocation(jump.condition.id);
         assembly += `  cmp ${condLocation}, 0\n`;
         assembly += `  jne ${jump.trueTarget}\n`;
         assembly += `  jmp ${jump.falseTarget}\n`;
       } else if ('callee' in instr) {
-        // Function call
         const call = instr as IRCall;
         
-        // Save caller-save registers
         for (const reg of X8664CallingConvention.callerSaveRegisters) {
           assembly += `  push ${reg.name}\n`;
         }
 
-        // Setup arguments
         for (let i = 0; i < call.args.length && i < 6; i++) {
           const arg = call.args[i];
           const argReg = X8664CallingConvention.argumentRegisters[i];
-          
-          let argLocation: string;
-          if ('value' in arg) {
-            argLocation = `$${arg.value}`;
-          } else {
-            argLocation = getValueLocation(arg.id);
-          }
-          
+          let argLocation = 'value' in arg ? `$${arg.value}` : getValueLocation(arg.id);
           assembly += `  mov ${argLocation}, ${argReg.name}\n`;
         }
 
-        // Extra arguments go on stack (not implemented yet)
-
-        // Make the call
         assembly += `  call ${call.callee}\n`;
 
-        // Restore caller-save registers
         for (let i = X8664CallingConvention.callerSaveRegisters.length - 1; i >= 0; i--) {
           const reg = X8664CallingConvention.callerSaveRegisters[i];
           assembly += `  pop ${reg.name}\n`;
         }
 
-        // Move return value to result register if needed
         if (call.type !== IRType.VOID) {
           const resultReg = this.instructionSelector.getRegisterAllocator().allocateRegister(call.callee);
           if (resultReg && resultReg.name !== X8664CallingConvention.returnRegister.name) {
@@ -249,30 +241,21 @@ export class X8664AssemblyGenerator {
           }
         }
       } else if ('value' in instr || (instr as any).type === 'ret') {
-        // Return instruction
         const ret = instr as IRRet;
         
         if (ret.value) {
-          let retLocation: string;
-          if ('value' in ret.value) {
-            retLocation = `$${ret.value.value}`;
-          } else {
-            retLocation = getValueLocation(ret.value.id);
-          }
+          let retLocation = 'value' in ret.value ? `$${ret.value.value}` : getValueLocation(ret.value.id);
           assembly += `  mov ${retLocation}, ${X8664CallingConvention.returnRegister.name}\n`;
         }
 
-        // Function epilogue
-        // Restore callee-save registers
         for (let i = X8664CallingConvention.calleeSaveRegisters.length - 1; i >= 0; i--) {
           const reg = X8664CallingConvention.calleeSaveRegisters[i];
           assembly += `  pop ${reg.name}\n`;
         }
 
-        // Deallocate stack space
-        const stackSize = this.instructionSelector.getStackManager().getTotalSize();
-        if (stackSize > 0) {
-          assembly += `  add rsp, ${stackSize}\n`;
+        const finalStackSize = this.instructionSelector.getStackManager().getTotalSize();
+        if (finalStackSize > 0) {
+          assembly += `  add rsp, ${finalStackSize}\n`;
         }
 
         assembly += '  pop rbp\n';

@@ -415,6 +415,12 @@ class SemanticAnalyzer {
         return { type: symbol.type, isError: false };
     }
     parseDataType(typeNode) {
+        // Handle pointer types
+        if (typeNode.isPointer) {
+            // For simplicity, treat all pointer types as INT for now
+            // In a full implementation, we'd track actual pointed-to types
+            return SymbolTable_1.DataType.INT;
+        }
         switch (typeNode.typeName) {
             case 'int':
                 return SymbolTable_1.DataType.INT;
@@ -423,7 +429,9 @@ class SemanticAnalyzer {
             case 'void':
                 return SymbolTable_1.DataType.VOID;
             default:
-                return SymbolTable_1.DataType.VOID;
+                // Handle struct types and other user-defined types
+                // For now, treat them as INT for compatibility
+                return SymbolTable_1.DataType.INT;
         }
     }
 }

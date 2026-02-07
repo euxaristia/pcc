@@ -438,6 +438,11 @@ export class InstructionSelector {
     if (!resultReg) {
       throw new Error('No available registers for load');
     }
+
+    // If it's a pointer dereference (e.g., loading from an address held in a register)
+    if (addressStr.startsWith('r') || addressStr.startsWith('e')) {
+       return [`mov (${addressStr}), ${resultReg.name}`];
+    }
     
     return [`mov ${addressStr}, ${resultReg.name}`];
   }
@@ -450,6 +455,11 @@ export class InstructionSelector {
     const valueStr = this.getOperandString(value, getValue);
     const addressStr = this.getOperandString(address, getValue);
     
+    // If it's a pointer dereference (e.g., storing to an address held in a register)
+    if (addressStr.startsWith('r') || addressStr.startsWith('e')) {
+       return [`mov ${valueStr}, (${addressStr})`];
+    }
+
     return [`mov ${valueStr}, ${addressStr}`];
   }
 
