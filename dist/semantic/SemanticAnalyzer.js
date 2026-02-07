@@ -126,13 +126,19 @@ class SemanticAnalyzer {
         // Analyze initializer if present
         if (node.initializer) {
             const result = this.analyzeExpression(node.initializer);
-            if (!result.isError && result.type !== varType) {
-                this.errors.push({
-                    message: `Cannot initialize ${varType} variable '${node.name}' with value of type ${result.type}`,
-                    line: node.line,
-                    column: node.column,
-                    node,
-                });
+            if (!result.isError && !(0, SymbolTable_1.isSameType)(result.type, varType)) {
+                // Allow initialization of pointer with 0
+                if (varType.isPointer && (0, SymbolTable_1.isSameType)(result.type, SymbolTable_1.BuiltinTypes.INT)) {
+                    // OK
+                }
+                else {
+                    this.errors.push({
+                        message: `Cannot initialize ${(0, SymbolTable_1.typeToString)(varType)} variable '${node.name}' with value of type ${(0, SymbolTable_1.typeToString)(result.type)}`,
+                        line: node.line,
+                        column: node.column,
+                        node,
+                    });
+                }
             }
             if (result.errorMessage) {
                 this.errors.push({
@@ -269,7 +275,7 @@ class SemanticAnalyzer {
             }
             else if (!this.typeChecker.isValidReturnType(expectedType, result.type)) {
                 this.errors.push({
-                    message: `Function '${this.currentFunction.name}' expects to return ${expectedType}, but got ${result.type}`,
+                    message: `Function '${this.currentFunction.name}' expects to return ${(0, SymbolTable_1.typeToString)(expectedType)}, but got ${(0, SymbolTable_1.typeToString)(result.type)}`,
                     line: node.line,
                     column: node.column,
                     node,
@@ -277,9 +283,9 @@ class SemanticAnalyzer {
             }
         }
         else {
-            if (expectedType !== SymbolTable_1.DataType.VOID) {
+            if (expectedType.baseType !== SymbolTable_1.BaseType.VOID || expectedType.isPointer) {
                 this.errors.push({
-                    message: `Function '${this.currentFunction.name}' expects to return ${expectedType}, but got no value`,
+                    message: `Function '${this.currentFunction.name}' expects to return ${(0, SymbolTable_1.typeToString)(expectedType)}, but got no value`,
                     line: node.line,
                     column: node.column,
                     node,
@@ -304,19 +310,33 @@ class SemanticAnalyzer {
             case Parser_1.NodeType.IDENTIFIER:
                 return this.analyzeIdentifier(node);
             case Parser_1.NodeType.NUMBER_LITERAL:
-                return { type: SymbolTable_1.DataType.INT, isError: false };
+                return { type: SymbolTable_1.BuiltinTypes.INT, isError: false };
             case Parser_1.NodeType.STRING_LITERAL:
-                this.errors.push({
-                    message: 'String literals not yet supported',
-                    line: node.line,
-                    column: node.column,
-                    node,
-                });
-                return { type: SymbolTable_1.DataType.VOID, isError: true, errorMessage: 'String literals not yet supported' };
+                // Pointers to char for strings
+                return {
+                    type: { baseType: SymbolTable_1.BaseType.CHAR, isPointer: true, pointerCount: 1 },
+                    isError: false
+                };
             case Parser_1.NodeType.CHARACTER_LITERAL:
-                return { type: SymbolTable_1.DataType.CHAR, isError: false };
+                return { type: SymbolTable_1.BuiltinTypes.CHAR, isError: false };
+            case Parser_1.NodeType.SIZEOF_EXPRESSION:
+                // sizeof always returns size_t which is typically unsigned long on 64-bit
+                // For simplicity, we treat it as INT
+                return { type: SymbolTable_1.BuiltinTypes.INT, isError: false };
+            case Parser_1.NodeType.CAST_EXPRESSION:
+                // Type cast returns the target type
+                const castNode = node;
+                return { type: this.parseDataType(castNode.targetType), isError: false };
+            case Parser_1.NodeType.MEMBER_ACCESS:
+                // For now, return int type for member access
+                // A full implementation would look up the struct type and member type
+                return { type: SymbolTable_1.BuiltinTypes.INT, isError: false };
+            case Parser_1.NodeType.ARRAY_ACCESS:
+                // For now, return int type for array access
+                // A full implementation would look up the array element type
+                return { type: SymbolTable_1.BuiltinTypes.INT, isError: false };
             default:
-                return { type: SymbolTable_1.DataType.VOID, isError: true, errorMessage: 'Unknown expression type' };
+                return { type: SymbolTable_1.BuiltinTypes.VOID, isError: true, errorMessage: 'Unknown expression type' };
         }
     }
     analyzeBinaryExpression(node) {
@@ -357,27 +377,49 @@ class SemanticAnalyzer {
         }
         // Handle different unary operators
         if (node.operator === '!') {
-            return { type: SymbolTable_1.DataType.INT, isError: false };
+            return { type: SymbolTable_1.BuiltinTypes.INT, isError: false };
         }
         if (node.operator === '-' || node.operator === '++_post' || node.operator === '--_post' || node.operator === '++' || node.operator === '--') {
-            if (operandResult.type === SymbolTable_1.DataType.INT) {
-                return { type: SymbolTable_1.DataType.INT, isError: false };
+            if ((0, SymbolTable_1.isSameType)(operandResult.type, SymbolTable_1.BuiltinTypes.INT)) {
+                return { type: SymbolTable_1.BuiltinTypes.INT, isError: false };
             }
             return {
-                type: SymbolTable_1.DataType.INT,
+                type: SymbolTable_1.BuiltinTypes.INT,
                 isError: true,
-                errorMessage: `Unary operator '${node.operator}' cannot be applied to ${operandResult.type}`,
+                errorMessage: `Unary operator '${node.operator}' cannot be applied to ${(0, SymbolTable_1.typeToString)(operandResult.type)}`,
             };
         }
         // Pointer operators (&, *)
-        if (node.operator === '&' || node.operator === '*') {
-            this.errors.push({
-                message: `Pointer operators '${node.operator}' not yet supported`,
-                line: node.line,
-                column: node.column,
-                node,
-            });
-            return { type: SymbolTable_1.DataType.VOID, isError: true, errorMessage: 'Pointer operators not yet supported' };
+        if (node.operator === '&') {
+            // Address-of: creates a pointer to the operand's type
+            return {
+                type: {
+                    baseType: operandResult.type.baseType,
+                    isPointer: true,
+                    pointerCount: operandResult.type.pointerCount + 1,
+                    structName: operandResult.type.structName,
+                },
+                isError: false,
+            };
+        }
+        if (node.operator === '*') {
+            // Dereference: follows a pointer to the underlying type
+            if (!operandResult.type.isPointer) {
+                return {
+                    type: SymbolTable_1.BuiltinTypes.VOID,
+                    isError: true,
+                    errorMessage: `Cannot dereference non-pointer type ${(0, SymbolTable_1.typeToString)(operandResult.type)}`,
+                };
+            }
+            return {
+                type: {
+                    baseType: operandResult.type.baseType,
+                    isPointer: operandResult.type.pointerCount > 1,
+                    pointerCount: operandResult.type.pointerCount - 1,
+                    structName: operandResult.type.structName,
+                },
+                isError: false,
+            };
         }
         return { type: operandResult.type, isError: false };
     }
@@ -407,7 +449,7 @@ class SemanticAnalyzer {
         const symbol = this.symbolTable.lookup(node.name);
         if (!symbol) {
             return {
-                type: SymbolTable_1.DataType.VOID,
+                type: SymbolTable_1.BuiltinTypes.VOID,
                 isError: true,
                 errorMessage: `Undeclared identifier '${node.name}'`,
             };
@@ -415,24 +457,32 @@ class SemanticAnalyzer {
         return { type: symbol.type, isError: false };
     }
     parseDataType(typeNode) {
-        // Handle pointer types
-        if (typeNode.isPointer) {
-            // For simplicity, treat all pointer types as INT for now
-            // In a full implementation, we'd track actual pointed-to types
-            return SymbolTable_1.DataType.INT;
+        let baseType;
+        let structName;
+        if (typeNode.typeName.startsWith('struct ')) {
+            baseType = SymbolTable_1.BaseType.STRUCT;
+            structName = typeNode.typeName.substring(7);
         }
-        switch (typeNode.typeName) {
-            case 'int':
-                return SymbolTable_1.DataType.INT;
-            case 'char':
-                return SymbolTable_1.DataType.CHAR;
-            case 'void':
-                return SymbolTable_1.DataType.VOID;
-            default:
-                // Handle struct types and other user-defined types
-                // For now, treat them as INT for compatibility
-                return SymbolTable_1.DataType.INT;
+        else {
+            switch (typeNode.typeName) {
+                case 'int':
+                    baseType = SymbolTable_1.BaseType.INT;
+                    break;
+                case 'char':
+                    baseType = SymbolTable_1.BaseType.CHAR;
+                    break;
+                case 'void':
+                    baseType = SymbolTable_1.BaseType.VOID;
+                    break;
+                default: baseType = SymbolTable_1.BaseType.INT; // Fallback
+            }
         }
+        return {
+            baseType,
+            isPointer: typeNode.isPointer,
+            pointerCount: typeNode.pointerCount,
+            structName,
+        };
     }
 }
 exports.SemanticAnalyzer = SemanticAnalyzer;

@@ -40,8 +40,16 @@ class RegisterAllocator {
         this.callingConvention = callingConvention;
     }
     allocateRegister(valueId) {
-        // Simple strategy: use first available caller-save register
+        // First, try caller-save registers
         for (const reg of this.callingConvention.callerSaveRegisters) {
+            if (!this.allocatedRegisters.has(reg)) {
+                this.allocatedRegisters.add(reg);
+                this.variableRegisters.set(valueId, reg);
+                return reg;
+            }
+        }
+        // If no caller-save registers available, use callee-save registers
+        for (const reg of this.callingConvention.calleeSaveRegisters) {
             if (!this.allocatedRegisters.has(reg)) {
                 this.allocatedRegisters.add(reg);
                 this.variableRegisters.set(valueId, reg);
@@ -299,12 +307,20 @@ class InstructionSelector {
         if (!resultReg) {
             throw new Error('No available registers for load');
         }
+        // If it's a pointer dereference (e.g., loading from an address held in a register)
+        if (addressStr.startsWith('r') || addressStr.startsWith('e')) {
+            return [`mov (${addressStr}), ${resultReg.name}`];
+        }
         return [`mov ${addressStr}, ${resultReg.name}`];
     }
     selectStoreInstruction(instruction, getValue) {
         const [value, address] = instruction.operands;
         const valueStr = this.getOperandString(value, getValue);
         const addressStr = this.getOperandString(address, getValue);
+        // If it's a pointer dereference (e.g., storing to an address held in a register)
+        if (addressStr.startsWith('r') || addressStr.startsWith('e')) {
+            return [`mov ${valueStr}, (${addressStr})`];
+        }
         return [`mov ${valueStr}, ${addressStr}`];
     }
     getOperandString(operand, getValue) {

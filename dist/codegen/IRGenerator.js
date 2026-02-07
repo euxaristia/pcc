@@ -133,13 +133,54 @@ class IRGenerator {
         if (!this.context.currentBlock) {
             throw new Error('Assignment outside block');
         }
-        const targetAddr = this.context.valueMap.get(assign.target.name);
-        if (!targetAddr) {
-            throw new Error(`Variable ${assign.target.name} not declared`);
+        let targetAddr;
+        if (assign.target.type === Parser_1.NodeType.IDENTIFIER) {
+            const addr = this.context.valueMap.get(assign.target.name);
+            if (!addr) {
+                throw new Error(`Variable ${assign.target.name} not declared`);
+            }
+            targetAddr = addr;
+        }
+        else if (assign.target.type === Parser_1.NodeType.MEMBER_ACCESS) {
+            // For now, treat member access like a variable
+            // A full implementation would calculate the offset
+            const memberAccess = assign.target;
+            if (memberAccess.object.type === Parser_1.NodeType.IDENTIFIER) {
+                const baseName = memberAccess.object.name;
+                const addr = this.context.valueMap.get(baseName);
+                if (!addr) {
+                    throw new Error(`Variable ${baseName} not declared`);
+                }
+                targetAddr = addr;
+            }
+            else {
+                throw new Error('Unsupported member access target');
+            }
+        }
+        else if (assign.target.type === Parser_1.NodeType.ARRAY_ACCESS) {
+            // For now, treat array access like a variable
+            // A full implementation would calculate the element address
+            const arrayAccess = assign.target;
+            if (arrayAccess.array.type === Parser_1.NodeType.IDENTIFIER) {
+                const arrayName = arrayAccess.array.name;
+                const addr = this.context.valueMap.get(arrayName);
+                if (!addr) {
+                    throw new Error(`Variable ${arrayName} not declared`);
+                }
+                targetAddr = addr;
+            }
+            else {
+                throw new Error('Unsupported array access target');
+            }
+        }
+        else {
+            throw new Error('Unsupported assignment target');
         }
         const value = this.processExpression(assign.value);
         const storeInstr = (0, IR_1.createInstruction)(this.genId(), IR_1.IROpCode.STORE, IR_1.IRType.VOID, [value, targetAddr]);
         this.context.currentBlock.instructions.push(storeInstr);
+        // Return the assigned value
+        return value;
     }
     processIfStatement(ifStmt) {
         if (!this.context.currentFunction || !this.context.currentBlock) {
@@ -286,18 +327,7 @@ class IRGenerator {
     processExpression(expr) {
         switch (expr.type) {
             case Parser_1.NodeType.ASSIGNMENT:
-                this.processAssignment(expr);
-                // Return the assigned value
-                const target = this.context.valueMap.get(expr.target.name);
-                if (!target) {
-                    throw new Error(`Variable ${expr.target.name} not declared`);
-                }
-                if (!this.context.currentBlock) {
-                    throw new Error('Assignment outside block');
-                }
-                const loadInstr = (0, IR_1.createInstruction)(this.genId(), IR_1.IROpCode.LOAD, target.type, [target]);
-                this.context.currentBlock.instructions.push(loadInstr);
-                return loadInstr;
+                return this.processAssignment(expr);
             case Parser_1.NodeType.BINARY_EXPRESSION:
                 return this.processBinaryExpression(expr);
             case Parser_1.NodeType.UNARY_EXPRESSION:
@@ -310,6 +340,14 @@ class IRGenerator {
                 return this.processNumberLiteral(expr);
             case Parser_1.NodeType.CHARACTER_LITERAL:
                 return this.processCharacterLiteral(expr);
+            case Parser_1.NodeType.SIZEOF_EXPRESSION:
+                return this.processSizeofExpression(expr);
+            case Parser_1.NodeType.CAST_EXPRESSION:
+                return this.processCastExpression(expr);
+            case Parser_1.NodeType.MEMBER_ACCESS:
+                return this.processMemberAccess(expr);
+            case Parser_1.NodeType.ARRAY_ACCESS:
+                return this.processArrayAccess(expr);
             default:
                 throw new Error(`Unsupported expression type: ${expr.type}`);
         }
@@ -373,6 +411,26 @@ class IRGenerator {
         if (!this.context.currentBlock) {
             throw new Error('Unary expression outside block');
         }
+        // Handle address-of (&) and dereference (*)
+        if (unary.operator === '&') {
+            if (unary.operand.type !== Parser_1.NodeType.IDENTIFIER) {
+                throw new Error('Cannot take address of non-identifier');
+            }
+            const ident = unary.operand;
+            const varAddr = this.context.valueMap.get(ident.name);
+            if (!varAddr) {
+                throw new Error(`Variable ${ident.name} not declared`);
+            }
+            return varAddr;
+        }
+        if (unary.operator === '*') {
+            const ptrValue = this.processExpression(unary.operand);
+            const resultType = (0, IR_1.isPointerType)(ptrValue.type) ?
+                this.getPointedToType(ptrValue.type) : IR_1.IRType.I32;
+            const loadInstr = (0, IR_1.createInstruction)(this.genId(), IR_1.IROpCode.LOAD, resultType, [ptrValue]);
+            this.context.currentBlock.instructions.push(loadInstr);
+            return loadInstr;
+        }
         const operand = this.processExpression(unary.operand);
         let opcode;
         switch (unary.operator) {
@@ -387,13 +445,20 @@ class IRGenerator {
                 // Handle post-increment/decrement: load value, compute new value, store back
                 const incrementValue = unary.operator === '++_post' ?
                     (0, IR_1.createConstant)(1, IR_1.IRType.I32) : (0, IR_1.createConstant)(-1, IR_1.IRType.I32);
-                const loadInstr = (0, IR_1.createInstruction)(this.genId(), IR_1.IROpCode.LOAD, operand.type, [operand]);
-                this.context.currentBlock.instructions.push(loadInstr);
-                const addInstr = (0, IR_1.createInstruction)(this.genId(), IR_1.IROpCode.ADD, operand.type, [loadInstr, incrementValue]);
-                this.context.currentBlock.instructions.push(addInstr);
-                const storeInstr = (0, IR_1.createInstruction)(this.genId(), IR_1.IROpCode.STORE, IR_1.IRType.VOID, [addInstr, operand]);
-                this.context.currentBlock.instructions.push(storeInstr);
-                return loadInstr; // Return original value for post-increment
+                if (unary.operand.type === Parser_1.NodeType.IDENTIFIER) {
+                    const ident = unary.operand;
+                    const addr = this.context.valueMap.get(ident.name);
+                    if (addr) {
+                        const currentVal = (0, IR_1.createInstruction)(this.genId(), IR_1.IROpCode.LOAD, addr.type, [addr]);
+                        this.context.currentBlock.instructions.push(currentVal);
+                        const newVal = (0, IR_1.createInstruction)(this.genId(), IR_1.IROpCode.ADD, addr.type, [currentVal, incrementValue]);
+                        this.context.currentBlock.instructions.push(newVal);
+                        const store = (0, IR_1.createInstruction)(this.genId(), IR_1.IROpCode.STORE, IR_1.IRType.VOID, [newVal, addr]);
+                        this.context.currentBlock.instructions.push(store);
+                        return currentVal;
+                    }
+                }
+                throw new Error('Postfix increment/decrement only supported on identifiers for now');
             default:
                 throw new Error(`Unsupported unary operator: ${unary.operator}`);
         }
@@ -457,7 +522,10 @@ class IRGenerator {
         return (0, IR_1.createConstant)(value, IR_1.IRType.I8);
     }
     dataTypeToIRType(dataType) {
-        switch (dataType) {
+        if (dataType.isPointer) {
+            return IR_1.IRType.PTR;
+        }
+        switch (dataType.baseType) {
             case 'int': return IR_1.IRType.I32;
             case 'char': return IR_1.IRType.I8;
             case 'void': return IR_1.IRType.VOID;
@@ -465,7 +533,26 @@ class IRGenerator {
         }
     }
     parseType(typeNode) {
-        return typeNode.typeName;
+        let baseType;
+        let structName;
+        if (typeNode.typeName.startsWith('struct ')) {
+            baseType = 'struct';
+            structName = typeNode.typeName.substring(7);
+        }
+        else {
+            baseType = typeNode.typeName;
+        }
+        return {
+            baseType,
+            isPointer: typeNode.isPointer,
+            pointerCount: typeNode.pointerCount,
+            structName,
+        };
+    }
+    getPointedToType(ptrType) {
+        // Simplified: if it's a pointer, it points to I32 for now
+        // A better implementation would store the pointed-to type in IRType
+        return IR_1.IRType.I32;
     }
     getOperationResultType(opcode, left, right) {
         // For now, assume all operations return I32
@@ -479,6 +566,140 @@ class IRGenerator {
     }
     genId() {
         return `t${this.context.nextId++}`;
+    }
+    processSizeofExpression(expr) {
+        // Calculate the size based on the operand type or expression
+        let size;
+        if (expr.isType) {
+            // sizeof(type)
+            const typeNode = expr.operand;
+            if (typeNode.isPointer) {
+                // Pointer size on x86-64 is 8 bytes
+                size = 8;
+            }
+            else {
+                switch (typeNode.typeName) {
+                    case 'int':
+                        size = 4;
+                        break;
+                    case 'char':
+                        size = 1;
+                        break;
+                    case 'void':
+                        size = 1;
+                        break;
+                    default: size = 4;
+                }
+            }
+        }
+        else {
+            // sizeof expression - need to get the type of the expression
+            // For now, we'll just assume int (4 bytes) for expressions
+            // In a full implementation, we'd analyze the expression to get its type
+            const operandExpr = expr.operand;
+            if (operandExpr.type === Parser_1.NodeType.IDENTIFIER) {
+                // Look up the variable to get its type
+                const ident = operandExpr;
+                const varAddr = this.context.valueMap.get(ident.name);
+                if (varAddr) {
+                    // Get size based on variable's IR type
+                    switch (varAddr.type) {
+                        case IR_1.IRType.I8:
+                            size = 1;
+                            break;
+                        case IR_1.IRType.I32:
+                            size = 4;
+                            break;
+                        case IR_1.IRType.PTR:
+                            size = 8;
+                            break;
+                        default: size = 4;
+                    }
+                }
+                else {
+                    size = 4; // Default
+                }
+            }
+            else if (operandExpr.type === Parser_1.NodeType.NUMBER_LITERAL) {
+                size = 4; // int literal
+            }
+            else if (operandExpr.type === Parser_1.NodeType.CHARACTER_LITERAL) {
+                size = 1; // char literal
+            }
+            else {
+                size = 4; // Default to int size
+            }
+        }
+        return (0, IR_1.createConstant)(size, IR_1.IRType.I32);
+    }
+    processCastExpression(expr) {
+        if (!this.context.currentBlock) {
+            throw new Error('Cast expression outside block');
+        }
+        // First, generate the operand
+        const operand = this.processExpression(expr.operand);
+        // Get the target type
+        const targetType = this.dataTypeToIRType(this.parseType(expr.targetType));
+        // If the types are the same, no conversion needed
+        if (operand.type === targetType) {
+            return operand;
+        }
+        // For now, we just return the operand unchanged
+        // A full implementation would handle:
+        // - Truncation/extension between integer types (TRUNC, SEXT, ZEXT)
+        // - Integer to pointer (and vice versa)
+        // - Floating point conversions
+        // - etc.
+        //
+        // For the kernel compilation, most casts are either:
+        // - No-op casts (same size)
+        // - Pointer casts (which are no-ops at the machine level)
+        // - Truncation (handled by just using the lower bits)
+        return operand;
+    }
+    processMemberAccess(expr) {
+        if (!this.context.currentBlock) {
+            throw new Error('Member access outside block');
+        }
+        // For now, just load from the base variable
+        // A full implementation would:
+        // 1. Calculate the offset of the member within the struct
+        // 2. Load from base + offset
+        if (expr.object.type === Parser_1.NodeType.IDENTIFIER) {
+            const objectName = expr.object.name;
+            const varAddr = this.context.valueMap.get(objectName);
+            if (!varAddr) {
+                throw new Error(`Variable ${objectName} not declared`);
+            }
+            // For now, just load the entire struct and pretend it's the member
+            // In reality, we'd need proper struct layout
+            const loadInstr = (0, IR_1.createInstruction)(this.genId(), IR_1.IROpCode.LOAD, IR_1.IRType.I32, [varAddr]);
+            this.context.currentBlock.instructions.push(loadInstr);
+            return loadInstr;
+        }
+        throw new Error('Unsupported member access object type');
+    }
+    processArrayAccess(expr) {
+        if (!this.context.currentBlock) {
+            throw new Error('Array access outside block');
+        }
+        // For now, just load from the base variable
+        // A full implementation would:
+        // 1. Calculate the element address: base + (index * element_size)
+        // 2. Load from that address
+        if (expr.array.type === Parser_1.NodeType.IDENTIFIER) {
+            const arrayName = expr.array.name;
+            const varAddr = this.context.valueMap.get(arrayName);
+            if (!varAddr) {
+                throw new Error(`Variable ${arrayName} not declared`);
+            }
+            // For now, just load the first element
+            // In reality, we'd need to calculate the offset based on the index
+            const loadInstr = (0, IR_1.createInstruction)(this.genId(), IR_1.IROpCode.LOAD, IR_1.IRType.I32, [varAddr]);
+            this.context.currentBlock.instructions.push(loadInstr);
+            return loadInstr;
+        }
+        throw new Error('Unsupported array access type');
     }
 }
 exports.IRGenerator = IRGenerator;

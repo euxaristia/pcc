@@ -63,7 +63,7 @@ export class RegisterAllocator {
   }
 
   allocateRegister(valueId: string): Register | null {
-    // Simple strategy: use first available caller-save register
+    // First, try caller-save registers
     for (const reg of this.callingConvention.callerSaveRegisters) {
       if (!this.allocatedRegisters.has(reg)) {
         this.allocatedRegisters.add(reg);
@@ -71,6 +71,16 @@ export class RegisterAllocator {
         return reg;
       }
     }
+    
+    // If no caller-save registers available, use callee-save registers
+    for (const reg of this.callingConvention.calleeSaveRegisters) {
+      if (!this.allocatedRegisters.has(reg)) {
+        this.allocatedRegisters.add(reg);
+        this.variableRegisters.set(valueId, reg);
+        return reg;
+      }
+    }
+    
     return null; // No registers available
   }
 

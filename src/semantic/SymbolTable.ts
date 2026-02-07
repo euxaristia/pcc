@@ -54,6 +54,15 @@ export class SymbolTable {
 
   exitScope(): void {
     if (this.scopeLevel > 0) {
+      // Remove all symbols from the current scope before exiting
+      for (const [name, symbols] of this.symbols) {
+        const filtered = symbols.filter(s => s.scopeLevel !== this.scopeLevel);
+        if (filtered.length === 0) {
+          this.symbols.delete(name);
+        } else {
+          this.symbols.set(name, filtered);
+        }
+      }
       this.scopeLevel--;
     }
   }

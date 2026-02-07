@@ -4,8 +4,8 @@ import {
   ForStatementNode, ReturnStatementNode, ExpressionStatementNode,
   BinaryExpressionNode, UnaryExpressionNode, FunctionCallNode,
   IdentifierNode, NumberLiteralNode, StringLiteralNode, CharacterLiteralNode,
-  TypeSpecifierNode, ParameterNode, CompoundStatementNode,
-  ExpressionNode, StatementNode
+  TypeSpecifierNode, ParameterNode, CompoundStatementNode, SizeofExpressionNode,
+  CastExpressionNode, MemberAccessNode, ArrayAccessNode, ExpressionNode, StatementNode
 } from '../parser/Parser';
 import { SymbolTable, Symbol, DataType, BaseType, BuiltinTypes, typeToString, isSameType } from './SymbolTable';
 import { TypeChecker } from './TypeChecker';
@@ -376,6 +376,26 @@ export class SemanticAnalyzer {
 
       case NodeType.CHARACTER_LITERAL:
         return { type: BuiltinTypes.CHAR, isError: false };
+
+      case NodeType.SIZEOF_EXPRESSION:
+        // sizeof always returns size_t which is typically unsigned long on 64-bit
+        // For simplicity, we treat it as INT
+        return { type: BuiltinTypes.INT, isError: false };
+
+      case NodeType.CAST_EXPRESSION:
+        // Type cast returns the target type
+        const castNode = node as CastExpressionNode;
+        return { type: this.parseDataType(castNode.targetType), isError: false };
+
+      case NodeType.MEMBER_ACCESS:
+        // For now, return int type for member access
+        // A full implementation would look up the struct type and member type
+        return { type: BuiltinTypes.INT, isError: false };
+
+      case NodeType.ARRAY_ACCESS:
+        // For now, return int type for array access
+        // A full implementation would look up the array element type
+        return { type: BuiltinTypes.INT, isError: false };
 
       default:
         return { type: BuiltinTypes.VOID, isError: true, errorMessage: 'Unknown expression type' };

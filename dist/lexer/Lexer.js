@@ -7,6 +7,10 @@ var TokenType;
     TokenType["INT"] = "int";
     TokenType["CHAR"] = "char";
     TokenType["VOID"] = "void";
+    TokenType["LONG"] = "long";
+    TokenType["SHORT"] = "short";
+    TokenType["UNSIGNED"] = "unsigned";
+    TokenType["SIGNED"] = "signed";
     TokenType["IF"] = "if";
     TokenType["ELSE"] = "else";
     TokenType["WHILE"] = "while";
@@ -17,6 +21,7 @@ var TokenType;
     TokenType["VOLATILE"] = "volatile";
     TokenType["EXPORT_SYMBOL"] = "EXPORT_SYMBOL";
     TokenType["INIT"] = "__init";
+    TokenType["SIZEOF"] = "sizeof";
     // Identifiers and literals
     TokenType["IDENTIFIER"] = "IDENTIFIER";
     TokenType["NUMBER"] = "NUMBER";
@@ -78,6 +83,10 @@ class Lexer {
             ['int', TokenType.INT],
             ['char', TokenType.CHAR],
             ['void', TokenType.VOID],
+            ['long', TokenType.LONG],
+            ['short', TokenType.SHORT],
+            ['unsigned', TokenType.UNSIGNED],
+            ['signed', TokenType.SIGNED],
             ['if', TokenType.IF],
             ['else', TokenType.ELSE],
             ['while', TokenType.WHILE],
@@ -91,6 +100,7 @@ class Lexer {
             ['EXPORT_SYMBOL', TokenType.EXPORT_SYMBOL],
             ['__init', TokenType.INIT],
             ['static', TokenType.STATIC],
+            ['sizeof', TokenType.SIZEOF],
         ]);
         this.input = input;
     }
@@ -154,8 +164,48 @@ class Lexer {
         const start = this.position;
         const startLine = this.line;
         const startColumn = this.column;
-        while (/\d/.test(this.peek())) {
+        // Check for hex (0x) or octal (0) prefix
+        if (this.peek() === '0') {
             this.advance();
+            if (this.peek() === 'x' || this.peek() === 'X') {
+                // Hexadecimal
+                this.advance();
+                while (/[0-9a-fA-F]/.test(this.peek())) {
+                    this.advance();
+                }
+            }
+            else if (/[0-7]/.test(this.peek())) {
+                // Octal
+                while (/[0-7]/.test(this.peek())) {
+                    this.advance();
+                }
+            }
+            // Just a single '0' - that's valid decimal 0
+        }
+        else {
+            // Regular decimal number
+            while (/\d/.test(this.peek())) {
+                this.advance();
+            }
+        }
+        // Handle suffixes (U, L, LL, UL, ULL, etc.)
+        if (this.peek() === 'u' || this.peek() === 'U') {
+            this.advance();
+            if (this.peek() === 'l' || this.peek() === 'L') {
+                this.advance();
+                if (this.peek() === 'l' || this.peek() === 'L') {
+                    this.advance();
+                }
+            }
+        }
+        else if (this.peek() === 'l' || this.peek() === 'L') {
+            this.advance();
+            if (this.peek() === 'l' || this.peek() === 'L') {
+                this.advance();
+            }
+            if (this.peek() === 'u' || this.peek() === 'U') {
+                this.advance();
+            }
         }
         const value = this.input.substring(start, this.position);
         return {

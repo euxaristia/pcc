@@ -36,6 +36,14 @@ var NodeType;
     NodeType["EXPORT_SYMBOL_STMT"] = "EXPORT_SYMBOL_STMT";
     NodeType["ATTRIBUTE_STMT"] = "ATTRIBUTE_STMT";
     NodeType["PREPROCESSOR_STMT"] = "PREPROCESSOR_STMT";
+    // Unary expressions
+    NodeType["SIZEOF_EXPRESSION"] = "SIZEOF_EXPRESSION";
+    // Cast expression
+    NodeType["CAST_EXPRESSION"] = "CAST_EXPRESSION";
+    // Array access
+    NodeType["ARRAY_ACCESS"] = "ARRAY_ACCESS";
+    // Member access
+    NodeType["MEMBER_ACCESS"] = "MEMBER_ACCESS";
 })(NodeType || (exports.NodeType = NodeType = {}));
 class Parser {
     constructor(tokens) {
@@ -101,7 +109,26 @@ class Parser {
                 }
                 continue;
             }
-            if (this.check(Lexer_1.TokenType.INT) || this.check(Lexer_1.TokenType.CHAR) || this.check(Lexer_1.TokenType.VOID) || this.check(Lexer_1.TokenType.STRUCT)) {
+            if (this.check(Lexer_1.TokenType.INT) || this.check(Lexer_1.TokenType.CHAR) || this.check(Lexer_1.TokenType.VOID) ||
+                this.check(Lexer_1.TokenType.STRUCT) || this.check(Lexer_1.TokenType.UNSIGNED) || this.check(Lexer_1.TokenType.SIGNED) ||
+                this.check(Lexer_1.TokenType.LONG) || this.check(Lexer_1.TokenType.SHORT)) {
+                // Special handling for struct definitions
+                if (this.check(Lexer_1.TokenType.STRUCT)) {
+                    const savedPosition = this.current;
+                    this.advance(); // consume 'struct'
+                    if (this.check(Lexer_1.TokenType.IDENTIFIER)) {
+                        this.advance(); // consume struct name
+                        if (this.check(Lexer_1.TokenType.LEFT_BRACE)) {
+                            // This is a struct definition, not a variable declaration
+                            // Backtrack and parse as type specifier
+                            this.current = savedPosition;
+                            this.parseTypeSpecifier();
+                            continue; // Skip to next iteration, struct definition handled
+                        }
+                    }
+                    // Not a struct definition, backtrack
+                    this.current = savedPosition;
+                }
                 const declaration = this.parseDeclaration();
                 if (declaration) {
                     declarations.push(declaration);
@@ -136,7 +163,83 @@ class Parser {
         // Handle struct types
         if (token.type === Lexer_1.TokenType.STRUCT) {
             this.consume(Lexer_1.TokenType.IDENTIFIER, 'Expected struct name');
-            typeName = `struct ${this.previous().value}`;
+            const structName = this.previous().value;
+            typeName = `struct ${structName}`;
+            // Check for struct body definition: struct Point { int x; int y; };
+            if (this.check(Lexer_1.TokenType.LEFT_BRACE)) {
+                // Parse struct body
+                this.advance(); // consume '{'
+                while (!this.check(Lexer_1.TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+                    if (this.check(Lexer_1.TokenType.NEWLINE)) {
+                        this.advance();
+                        continue;
+                    }
+                    // Parse member declaration
+                    if (this.check(Lexer_1.TokenType.INT) || this.check(Lexer_1.TokenType.CHAR) ||
+                        this.check(Lexer_1.TokenType.VOID) || this.check(Lexer_1.TokenType.STRUCT) ||
+                        this.check(Lexer_1.TokenType.LONG) || this.check(Lexer_1.TokenType.SHORT) ||
+                        this.check(Lexer_1.TokenType.UNSIGNED) || this.check(Lexer_1.TokenType.SIGNED)) {
+                        const memberType = this.parseTypeSpecifier();
+                        const memberName = this.consume(Lexer_1.TokenType.IDENTIFIER, 'Expected member name');
+                        // Handle array members
+                        if (this.match(Lexer_1.TokenType.LEFT_BRACKET)) {
+                            if (!this.check(Lexer_1.TokenType.RIGHT_BRACKET)) {
+                                this.parseExpression(); // parse array size
+                            }
+                            this.consume(Lexer_1.TokenType.RIGHT_BRACKET, "Expected ']' after array size");
+                        }
+                        this.consume(Lexer_1.TokenType.SEMICOLON, "Expected ';' after member declaration");
+                    }
+                }
+                this.consume(Lexer_1.TokenType.RIGHT_BRACE, "Expected '}' after struct body");
+                // After struct body, there might be variable declarations
+                // e.g., struct Point { ... } p1, p2;
+                // For now, we consume any variable names
+                while (this.check(Lexer_1.TokenType.IDENTIFIER)) {
+                    this.advance(); // consume variable name
+                    if (this.check(Lexer_1.TokenType.COMMA)) {
+                        this.advance();
+                    }
+                    else {
+                        break;
+                    }
+                }
+                // Consume semicolon after struct definition if present
+                if (this.check(Lexer_1.TokenType.SEMICOLON)) {
+                    this.advance();
+                }
+            }
+        }
+        // Handle compound type specifiers
+        // unsigned int, unsigned long, unsigned long long, signed int, etc.
+        if (token.type === Lexer_1.TokenType.UNSIGNED || token.type === Lexer_1.TokenType.SIGNED) {
+            if (this.check(Lexer_1.TokenType.INT) || this.check(Lexer_1.TokenType.LONG) ||
+                this.check(Lexer_1.TokenType.SHORT) || this.check(Lexer_1.TokenType.CHAR)) {
+                const nextToken = this.advance();
+                typeName = `${typeName} ${nextToken.value}`;
+                // Handle long long
+                if (nextToken.type === Lexer_1.TokenType.LONG && this.check(Lexer_1.TokenType.LONG)) {
+                    this.advance();
+                    typeName = `${typeName} long`;
+                }
+            }
+        }
+        else if (token.type === Lexer_1.TokenType.LONG) {
+            // Handle long long
+            if (this.check(Lexer_1.TokenType.LONG)) {
+                this.advance();
+                typeName = 'long long';
+            }
+            // Handle long int
+            if (this.check(Lexer_1.TokenType.INT)) {
+                this.advance();
+            }
+        }
+        else if (token.type === Lexer_1.TokenType.SHORT) {
+            // Handle short int
+            if (this.check(Lexer_1.TokenType.INT)) {
+                this.advance();
+            }
         }
         let pointerCount = 0;
         // Count pointer modifiers
@@ -195,6 +298,20 @@ class Parser {
     }
     parseVariableDeclaration(varType, name) {
         let initializer;
+        let arraySize;
+        // Check for array declaration: int arr[5];
+        if (this.match(Lexer_1.TokenType.LEFT_BRACKET)) {
+            if (!this.check(Lexer_1.TokenType.RIGHT_BRACKET)) {
+                arraySize = this.parseExpression();
+            }
+            this.consume(Lexer_1.TokenType.RIGHT_BRACKET, "Expected ']' after array size");
+            // Update type to be an array
+            varType = {
+                ...varType,
+                isPointer: true,
+                pointerCount: varType.pointerCount + 1,
+            };
+        }
         if (this.match(Lexer_1.TokenType.ASSIGN)) {
             initializer = this.parseExpression();
         }
@@ -228,7 +345,9 @@ class Parser {
     }
     parseStatement() {
         // Declaration
-        if (this.check(Lexer_1.TokenType.INT) || this.check(Lexer_1.TokenType.CHAR) || this.check(Lexer_1.TokenType.VOID) || this.check(Lexer_1.TokenType.STRUCT)) {
+        if (this.check(Lexer_1.TokenType.INT) || this.check(Lexer_1.TokenType.CHAR) || this.check(Lexer_1.TokenType.VOID) ||
+            this.check(Lexer_1.TokenType.STRUCT) || this.check(Lexer_1.TokenType.UNSIGNED) || this.check(Lexer_1.TokenType.SIGNED) ||
+            this.check(Lexer_1.TokenType.LONG) || this.check(Lexer_1.TokenType.SHORT)) {
             const typeSpecifier = this.parseTypeSpecifier();
             const name = this.consume(Lexer_1.TokenType.IDENTIFIER, 'Expected identifier after type');
             return this.parseVariableDeclaration(typeSpecifier, name.value);
@@ -369,7 +488,10 @@ class Parser {
         const expr = this.parseLogicalOr();
         if (this.match(Lexer_1.TokenType.ASSIGN)) {
             const value = this.parseAssignment();
-            if (expr.type === NodeType.IDENTIFIER) {
+            // Allow assignment to identifiers, member access, and array access
+            if (expr.type === NodeType.IDENTIFIER ||
+                expr.type === NodeType.MEMBER_ACCESS ||
+                expr.type === NodeType.ARRAY_ACCESS) {
                 return {
                     type: NodeType.ASSIGNMENT,
                     target: expr,
@@ -495,6 +617,32 @@ class Parser {
         return expr;
     }
     parseUnary() {
+        // Handle type casting: (type) expression
+        if (this.check(Lexer_1.TokenType.LEFT_PAREN)) {
+            const savedPosition = this.current;
+            this.advance(); // consume '('
+            // Check if it's a type cast by looking for a type keyword
+            if (this.check(Lexer_1.TokenType.INT) || this.check(Lexer_1.TokenType.CHAR) ||
+                this.check(Lexer_1.TokenType.VOID) || this.check(Lexer_1.TokenType.STRUCT) ||
+                this.check(Lexer_1.TokenType.LONG) || this.check(Lexer_1.TokenType.SHORT) ||
+                this.check(Lexer_1.TokenType.UNSIGNED) || this.check(Lexer_1.TokenType.SIGNED)) {
+                // It's a type cast
+                const targetType = this.parseTypeSpecifier();
+                this.consume(Lexer_1.TokenType.RIGHT_PAREN, "Expected ')' after type in cast");
+                const operand = this.parseUnary(); // Cast has high precedence
+                return {
+                    type: NodeType.CAST_EXPRESSION,
+                    targetType,
+                    operand,
+                    line: targetType.line,
+                    column: targetType.column,
+                };
+            }
+            else {
+                // Not a type cast, backtrack and parse as parenthesized expression
+                this.current = savedPosition;
+            }
+        }
         if (this.match(Lexer_1.TokenType.NOT, Lexer_1.TokenType.MINUS, Lexer_1.TokenType.BITWISE_AND, Lexer_1.TokenType.MULTIPLY)) {
             const operator = this.previous().value;
             const operand = this.parseUnary();
@@ -506,12 +654,72 @@ class Parser {
                 column: operand.column,
             };
         }
+        // Handle sizeof operator
+        if (this.match(Lexer_1.TokenType.SIZEOF)) {
+            return this.parseSizeof();
+        }
         return this.parsePostfix();
+    }
+    parseSizeof() {
+        const line = this.previous().line;
+        const column = this.previous().column;
+        // sizeof(type) or sizeof expression
+        if (this.match(Lexer_1.TokenType.LEFT_PAREN)) {
+            // Check if it's a type or an expression
+            if (this.check(Lexer_1.TokenType.INT) || this.check(Lexer_1.TokenType.CHAR) ||
+                this.check(Lexer_1.TokenType.VOID) || this.check(Lexer_1.TokenType.STRUCT)) {
+                // It's sizeof(type)
+                const typeSpec = this.parseTypeSpecifier();
+                this.consume(Lexer_1.TokenType.RIGHT_PAREN, "Expected ')' after type in sizeof");
+                return {
+                    type: NodeType.SIZEOF_EXPRESSION,
+                    operand: typeSpec,
+                    isType: true,
+                    line,
+                    column,
+                };
+            }
+            else {
+                // It's sizeof(expression)
+                const expr = this.parseExpression();
+                this.consume(Lexer_1.TokenType.RIGHT_PAREN, "Expected ')' after expression in sizeof");
+                return {
+                    type: NodeType.SIZEOF_EXPRESSION,
+                    operand: expr,
+                    isType: false,
+                    line,
+                    column,
+                };
+            }
+        }
+        else {
+            // sizeof expression without parentheses
+            const expr = this.parseUnary();
+            return {
+                type: NodeType.SIZEOF_EXPRESSION,
+                operand: expr,
+                isType: false,
+                line,
+                column,
+            };
+        }
     }
     parsePostfix() {
         let expr = this.parsePrimary();
         while (true) {
-            if (this.match(Lexer_1.TokenType.LEFT_PAREN)) {
+            // Array subscript: arr[index]
+            if (this.match(Lexer_1.TokenType.LEFT_BRACKET)) {
+                const index = this.parseExpression();
+                this.consume(Lexer_1.TokenType.RIGHT_BRACKET, "Expected ']' after array index");
+                expr = {
+                    type: NodeType.ARRAY_ACCESS,
+                    array: expr,
+                    index: index,
+                    line: expr.line,
+                    column: expr.column,
+                };
+            }
+            else if (this.match(Lexer_1.TokenType.LEFT_PAREN)) {
                 const args = [];
                 if (!this.check(Lexer_1.TokenType.RIGHT_PAREN)) {
                     do {
@@ -523,6 +731,17 @@ class Parser {
                     type: NodeType.FUNCTION_CALL,
                     name: expr.name,
                     arguments: args,
+                    line: expr.line,
+                    column: expr.column,
+                };
+            }
+            else if (this.match(Lexer_1.TokenType.DOT)) {
+                // Member access: obj.member
+                const memberToken = this.consume(Lexer_1.TokenType.IDENTIFIER, "Expected member name after '.'");
+                expr = {
+                    type: NodeType.MEMBER_ACCESS,
+                    object: expr,
+                    member: memberToken.value,
                     line: expr.line,
                     column: expr.column,
                 };
@@ -593,6 +812,68 @@ class Parser {
         this.consume(Lexer_1.TokenType.LEFT_PAREN, 'Expected \'(\' after asm');
         this.consume(Lexer_1.TokenType.STRING, 'Expected string literal with assembly code');
         const assembly = this.previous().value;
+        // Parse optional output operands (starts with ':')
+        if (this.match(Lexer_1.TokenType.COLON)) {
+            // Skip output operands - they are comma-separated constraint expressions
+            while (!this.check(Lexer_1.TokenType.COLON) && !this.check(Lexer_1.TokenType.RIGHT_PAREN)) {
+                if (this.match(Lexer_1.TokenType.COMMA)) {
+                    continue;
+                }
+                // Skip constraint strings and expressions
+                if (this.check(Lexer_1.TokenType.STRING)) {
+                    this.advance();
+                }
+                else if (this.check(Lexer_1.TokenType.LEFT_PAREN)) {
+                    // Skip parenthesized expression
+                    this.advance();
+                    while (!this.check(Lexer_1.TokenType.RIGHT_PAREN) && !this.isAtEnd()) {
+                        this.advance();
+                    }
+                    if (this.check(Lexer_1.TokenType.RIGHT_PAREN)) {
+                        this.advance();
+                    }
+                }
+                else {
+                    this.advance();
+                }
+            }
+        }
+        // Parse optional input operands (starts with ':')
+        if (this.match(Lexer_1.TokenType.COLON)) {
+            // Skip input operands - they are comma-separated constraint expressions
+            while (!this.check(Lexer_1.TokenType.COLON) && !this.check(Lexer_1.TokenType.RIGHT_PAREN)) {
+                if (this.match(Lexer_1.TokenType.COMMA)) {
+                    continue;
+                }
+                // Skip constraint strings and expressions
+                if (this.check(Lexer_1.TokenType.STRING)) {
+                    this.advance();
+                }
+                else if (this.check(Lexer_1.TokenType.LEFT_PAREN)) {
+                    // Skip parenthesized expression
+                    this.advance();
+                    while (!this.check(Lexer_1.TokenType.RIGHT_PAREN) && !this.isAtEnd()) {
+                        this.advance();
+                    }
+                    if (this.check(Lexer_1.TokenType.RIGHT_PAREN)) {
+                        this.advance();
+                    }
+                }
+                else {
+                    this.advance();
+                }
+            }
+        }
+        // Parse optional clobbered registers (starts with ':')
+        if (this.match(Lexer_1.TokenType.COLON)) {
+            // Skip clobber list - comma-separated strings
+            while (!this.check(Lexer_1.TokenType.RIGHT_PAREN) && !this.isAtEnd()) {
+                if (this.match(Lexer_1.TokenType.COMMA)) {
+                    continue;
+                }
+                this.advance();
+            }
+        }
         this.consume(Lexer_1.TokenType.RIGHT_PAREN, 'Expected \')\' after assembly');
         this.consume(Lexer_1.TokenType.SEMICOLON, 'Expected \';\' after asm statement');
         return {

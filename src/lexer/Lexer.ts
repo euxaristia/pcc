@@ -3,6 +3,10 @@ export enum TokenType {
   INT = 'int',
   CHAR = 'char',
   VOID = 'void',
+  LONG = 'long',
+  SHORT = 'short',
+  UNSIGNED = 'unsigned',
+  SIGNED = 'signed',
   IF = 'if',
   ELSE = 'else',
   WHILE = 'while',
@@ -13,6 +17,7 @@ export enum TokenType {
   VOLATILE = 'volatile',
   EXPORT_SYMBOL = 'EXPORT_SYMBOL',
   INIT = '__init',
+  SIZEOF = 'sizeof',
   
   // Identifiers and literals
   IDENTIFIER = 'IDENTIFIER',
@@ -90,6 +95,10 @@ export class Lexer {
     ['int', TokenType.INT],
     ['char', TokenType.CHAR],
     ['void', TokenType.VOID],
+    ['long', TokenType.LONG],
+    ['short', TokenType.SHORT],
+    ['unsigned', TokenType.UNSIGNED],
+    ['signed', TokenType.SIGNED],
     ['if', TokenType.IF],
     ['else', TokenType.ELSE],
     ['while', TokenType.WHILE],
@@ -103,6 +112,7 @@ export class Lexer {
     ['EXPORT_SYMBOL', TokenType.EXPORT_SYMBOL],
     ['__init', TokenType.INIT],
     ['static', TokenType.STATIC],
+    ['sizeof', TokenType.SIZEOF],
   ]);
 
   constructor(input: string) {
@@ -179,8 +189,46 @@ export class Lexer {
     const startLine = this.line;
     const startColumn = this.column;
     
-    while (/\d/.test(this.peek())) {
+    // Check for hex (0x) or octal (0) prefix
+    if (this.peek() === '0') {
       this.advance();
+      if (this.peek() === 'x' || this.peek() === 'X') {
+        // Hexadecimal
+        this.advance();
+        while (/[0-9a-fA-F]/.test(this.peek())) {
+          this.advance();
+        }
+      } else if (/[0-7]/.test(this.peek())) {
+        // Octal
+        while (/[0-7]/.test(this.peek())) {
+          this.advance();
+        }
+      }
+      // Just a single '0' - that's valid decimal 0
+    } else {
+      // Regular decimal number
+      while (/\d/.test(this.peek())) {
+        this.advance();
+      }
+    }
+    
+    // Handle suffixes (U, L, LL, UL, ULL, etc.)
+    if (this.peek() === 'u' || this.peek() === 'U') {
+      this.advance();
+      if (this.peek() === 'l' || this.peek() === 'L') {
+        this.advance();
+        if (this.peek() === 'l' || this.peek() === 'L') {
+          this.advance();
+        }
+      }
+    } else if (this.peek() === 'l' || this.peek() === 'L') {
+      this.advance();
+      if (this.peek() === 'l' || this.peek() === 'L') {
+        this.advance();
+      }
+      if (this.peek() === 'u' || this.peek() === 'U') {
+        this.advance();
+      }
     }
     
     const value = this.input.substring(start, this.position);

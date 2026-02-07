@@ -1,12 +1,33 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SymbolTable = exports.DataType = void 0;
-var DataType;
-(function (DataType) {
-    DataType["INT"] = "int";
-    DataType["CHAR"] = "char";
-    DataType["VOID"] = "void";
-})(DataType || (exports.DataType = DataType = {}));
+exports.SymbolTable = exports.BuiltinTypes = exports.BaseType = void 0;
+exports.isSameType = isSameType;
+exports.typeToString = typeToString;
+var BaseType;
+(function (BaseType) {
+    BaseType["INT"] = "int";
+    BaseType["CHAR"] = "char";
+    BaseType["VOID"] = "void";
+    BaseType["STRUCT"] = "struct";
+})(BaseType || (exports.BaseType = BaseType = {}));
+exports.BuiltinTypes = {
+    INT: { baseType: BaseType.INT, isPointer: false, pointerCount: 0 },
+    CHAR: { baseType: BaseType.CHAR, isPointer: false, pointerCount: 0 },
+    VOID: { baseType: BaseType.VOID, isPointer: false, pointerCount: 0 },
+};
+function isSameType(a, b) {
+    return a.baseType === b.baseType &&
+        a.isPointer === b.isPointer &&
+        a.pointerCount === b.pointerCount &&
+        a.structName === b.structName;
+}
+function typeToString(type) {
+    let str = type.baseType === BaseType.STRUCT ? `struct ${type.structName}` : type.baseType;
+    if (type.isPointer) {
+        str += '*'.repeat(type.pointerCount);
+    }
+    return str;
+}
 class SymbolTable {
     constructor() {
         this.symbols = new Map();
@@ -17,6 +38,16 @@ class SymbolTable {
     }
     exitScope() {
         if (this.scopeLevel > 0) {
+            // Remove all symbols from the current scope before exiting
+            for (const [name, symbols] of this.symbols) {
+                const filtered = symbols.filter(s => s.scopeLevel !== this.scopeLevel);
+                if (filtered.length === 0) {
+                    this.symbols.delete(name);
+                }
+                else {
+                    this.symbols.set(name, filtered);
+                }
+            }
             this.scopeLevel--;
         }
     }
