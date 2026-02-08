@@ -53,7 +53,7 @@ if [ -d "$PCC_LIB_DIR" ]; then
     node "$PCC_LIB_DIR/compile.js" "$SOURCE_FILE" > /dev/null
 else
     # Fallback to local development
-    node "$(dirname "$0")/../dist/compile.js" "$SOURCE_FILE" > /dev/null
+    node "$(dirname "$0")/dist/compile.js" "$SOURCE_FILE" > /dev/null
 fi
 
 # Check if compilation succeeded

@@ -2,7 +2,12 @@
 
 Targeting the Alpine Linux kernel was a 20% capability match. Switching focus to **xv6-public** provides a more realistic path to 100% compiler completeness. xv6 is ~9,000 lines of clean C code, but still requires several key features pcc lacks.
 
-## Current Progress: ~60% for xv6
+## Current Progress: ~70% for xv6
+
+### Recently Completed ✅
+- [x] **`__attribute__` parsing**: Added support for `__attribute__((...))` after function parameters
+- [x] **`extern` storage class**: Added support for `extern` variable declarations  
+- [x] **Basic conditional preprocessor**: Added support for `#if X64` / `#else` / `#endif` blocks
 
 ## Roadmap to xv6 Compilation
 

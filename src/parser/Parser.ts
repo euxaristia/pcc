@@ -120,6 +120,7 @@ export interface DeclarationNode extends ASTNode {
   varType: TypeSpecifierNode;
   name: string;
   initializer?: ExpressionNode;
+  storageClass?: 'extern' | 'static' | 'inline';
 }
 
 export interface MultiDeclarationNode extends ASTNode {
@@ -459,7 +460,7 @@ export class Parser {
       }
       
       // Attributes and other kernel directives
-      if (this.check(TokenType.EXPORT_SYMBOL) || this.check(TokenType.ASM) || this.check(TokenType.ATTRIBUTE) || this.check(TokenType.TYPEDEF)) {
+      if (this.check(TokenType.EXPORT_SYMBOL) || this.check(TokenType.ASM) || this.check(TokenType.ATTRIBUTE) || this.check(TokenType.TYPEDEF) || this.check(TokenType.PREPROCESSOR)) {
         const statement = this.parseStatement();
         if (statement) {
           declarations.push(statement as any);
@@ -529,7 +530,7 @@ export class Parser {
     if (this.check(TokenType.LEFT_PAREN)) {
       return this.parseFunctionDeclaration(typeSpecifier, name, storageClasses.join(' '));
     } else {
-      return this.parseVariableDeclaration(typeSpecifier, name);
+      return this.parseVariableDeclaration(typeSpecifier, name, storageClasses.join(' '));
     }
   }
 
@@ -677,6 +678,11 @@ export class Parser {
     const parameters = this.parseParameters();
     this.consume(TokenType.RIGHT_PAREN, 'Expected \')\' after parameters');
     
+    // Parse optional __attribute__ after function parameters
+    if (this.match(TokenType.ATTRIBUTE)) {
+      this.parseAttributeInDeclaration(); // Parse without consuming semicolon
+    }
+    
     let body: CompoundStatementNode | undefined;
     if (this.check(TokenType.LEFT_BRACE)) {
       body = this.parseCompoundStatement();
@@ -750,7 +756,7 @@ export class Parser {
     return parameters;
   }
 
-  private parseVariableDeclaration(varType: TypeSpecifierNode, firstName: string): DeclarationNode | MultiDeclarationNode {
+  private parseVariableDeclaration(varType: TypeSpecifierNode, firstName: string, storageClass?: string): DeclarationNode | MultiDeclarationNode {
     const declarations: DeclarationNode[] = [];
     
     let currentName = firstName;
@@ -784,6 +790,7 @@ export class Parser {
         varType: currentType,
         name: currentName,
         initializer,
+        storageClass: storageClass as any,
         line: currentType.line,
         column: currentType.column,
       });
@@ -1914,10 +1921,75 @@ export class Parser {
     };
   }
 
+  private parseAttributeInDeclaration(): void {
+    const attributeToken = this.previous();
+    let attributeContent = attributeToken.value;
+    
+    // GCC attributes use __attribute__((...))
+    if (this.match(TokenType.LEFT_PAREN)) {
+      attributeContent += '(';
+      let parenCount = 1;
+      while (parenCount > 0 && !this.isAtEnd()) {
+        if (this.match(TokenType.LEFT_PAREN)) {
+          parenCount++;
+          attributeContent += '(';
+        } else if (this.match(TokenType.RIGHT_PAREN)) {
+          parenCount--;
+          attributeContent += ')';
+        } else {
+          attributeContent += this.advance().value;
+        }
+      }
+    }
+    
+    // In declaration context, don't consume the semicolon - let the caller handle it
+    // We just parse and ignore the attribute for now
+  }
+
   private parsePreprocessor(): PreprocessorNode {
     const content = this.previous().value;
     const parts = content.split(/\s+/);
     const directive = parts[0];
+    
+    // Handle conditional directives
+    if (directive === '#if') {
+      if (parts[1] === 'X64') {
+        // Treat X64 as true, continue parsing normally
+        return {
+          type: NodeType.PREPROCESSOR_STMT,
+          directive,
+          content: content.substring(1),
+          line: this.previous().line,
+          column: this.previous().column,
+        };
+      }
+    } else if (directive === '#else') {
+      // Skip until #endif
+      while (!this.isAtEnd() && !this.check(TokenType.PREPROCESSOR)) {
+        this.advance();
+      }
+      if (this.check(TokenType.PREPROCESSOR)) {
+        const nextContent = this.peek().value;
+        if (nextContent.startsWith('#endif')) {
+          this.advance(); // Consume #endif
+        }
+      }
+      return {
+        type: NodeType.PREPROCESSOR_STMT,
+        directive,
+        content: content.substring(1),
+        line: this.previous().line,
+        column: this.previous().column,
+      };
+    } else if (directive === '#endif') {
+      return {
+        type: NodeType.PREPROCESSOR_STMT,
+        directive,
+        content: content.substring(1),
+        line: this.previous().line,
+        column: this.previous().column,
+      };
+    }
     
     return {
       type: NodeType.PREPROCESSOR_STMT,

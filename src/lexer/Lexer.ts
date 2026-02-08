@@ -544,8 +544,7 @@ export class Lexer {
     
     // Handle preprocessor directives (including line markers from preprocessed code)
     if (this.peek() === '#') {
-      this.skipPreprocessorDirective();
-      return this.nextToken();
+      return this.readPreprocessorDirective();
     }
     
     if (this.position >= this.input.length) {
