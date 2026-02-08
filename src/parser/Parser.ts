@@ -14,6 +14,9 @@ export enum NodeType {
   IF_STATEMENT = 'IF_STATEMENT',
   WHILE_STATEMENT = 'WHILE_STATEMENT',
   FOR_STATEMENT = 'FOR_STATEMENT',
+  DO_WHILE_STATEMENT = 'DO_WHILE_STATEMENT',
+  GOTO_STATEMENT = 'GOTO_STATEMENT',
+  LABEL_STATEMENT = 'LABEL_STATEMENT',
   RETURN_STATEMENT = 'RETURN_STATEMENT',
   EXPRESSION_STATEMENT = 'EXPRESSION_STATEMENT',
   
@@ -22,6 +25,7 @@ export enum NodeType {
   UNARY_EXPRESSION = 'UNARY_EXPRESSION',
   FUNCTION_CALL = 'FUNCTION_CALL',
   ARGUMENT_LIST = 'ARGUMENT_LIST',
+  TERNARY_EXPRESSION = 'TERNARY_EXPRESSION',
   
   // Literals and identifiers
   IDENTIFIER = 'IDENTIFIER',
@@ -31,6 +35,10 @@ export enum NodeType {
   
   // Types
   TYPE_SPECIFIER = 'TYPE_SPECIFIER',
+  
+  // Declarations
+  ENUM_DECLARATION = 'ENUM_DECLARATION',
+  UNION_DECLARATION = 'UNION_DECLARATION',
   
   // Assembly
   ASM_STATEMENT = 'ASM_STATEMENT',
@@ -79,7 +87,8 @@ export interface FunctionDeclarationNode extends ASTNode {
   returnType: TypeSpecifierNode;
   name: string;
   parameters: ParameterNode[];
-  body: CompoundStatementNode;
+  body?: CompoundStatementNode;
+  storageClass?: 'extern' | 'static' | 'inline';
 }
 
 export interface ParameterNode extends ASTNode {
@@ -93,6 +102,7 @@ export interface TypeSpecifierNode extends ASTNode {
   typeName: string;
   isPointer: boolean;
   pointerCount: number;
+  qualifiers: ('const' | 'volatile' | 'restrict')[];
 }
 
 export interface CompoundStatementNode extends ASTNode {
@@ -262,6 +272,47 @@ export interface MemberAccessNode extends ASTNode {
   member: string;
 }
 
+export interface TernaryExpressionNode extends ASTNode {
+  type: NodeType.TERNARY_EXPRESSION;
+  condition: ExpressionNode;
+  thenBranch: ExpressionNode;
+  elseBranch: ExpressionNode;
+}
+
+export interface DoWhileStatementNode extends ASTNode {
+  type: NodeType.DO_WHILE_STATEMENT;
+  body: StatementNode;
+  condition: ExpressionNode;
+}
+
+export interface GotoStatementNode extends ASTNode {
+  type: NodeType.GOTO_STATEMENT;
+  label: string;
+}
+
+export interface LabelStatementNode extends ASTNode {
+  type: NodeType.LABEL_STATEMENT;
+  name: string;
+}
+
+export interface EnumDeclarationNode extends ASTNode {
+  type: NodeType.ENUM_DECLARATION;
+  name: string;
+  values: EnumValueNode[];
+}
+
+export interface EnumValueNode extends ASTNode {
+  type: NodeType.ENUM_DECLARATION; // Reuse enum type
+  name: string;
+  value?: ExpressionNode;
+}
+
+export interface UnionDeclarationNode extends ASTNode {
+  type: NodeType.UNION_DECLARATION;
+  name: string;
+  fields: DeclarationNode[];
+}
+
 export type ExpressionNode = 
   | BinaryExpressionNode
   | UnaryExpressionNode
@@ -274,7 +325,8 @@ export type ExpressionNode =
   | SizeofExpressionNode
   | CastExpressionNode
   | ArrayAccessNode
-  | MemberAccessNode;
+  | MemberAccessNode
+  | TernaryExpressionNode;
 
 export type StatementNode = 
   | DeclarationNode
@@ -282,6 +334,9 @@ export type StatementNode =
   | IfStatementNode
   | WhileStatementNode
   | ForStatementNode
+  | DoWhileStatementNode
+  | GotoStatementNode
+  | LabelStatementNode
   | ReturnStatementNode
   | ExpressionStatementNode
   | CompoundStatementNode
@@ -294,7 +349,9 @@ export type StatementNode =
   | CaseStatementNode
   | DefaultStatementNode
   | BreakStatementNode
-  | ContinueStatementNode;
+  | ContinueStatementNode
+  | EnumDeclarationNode
+  | UnionDeclarationNode;
 
 export class Parser {
   private tokens: Token[];
@@ -304,11 +361,12 @@ export class Parser {
     this.tokens = tokens;
   }
 
-  private peek(): Token {
-    if (this.current >= this.tokens.length) {
+  private peek(offset: number = 0): Token {
+    const index = this.current + offset;
+    if (index >= this.tokens.length) {
       return { type: TokenType.EOF, value: '', line: 0, column: 0 };
     }
-    return this.tokens[this.current]!;
+    return this.tokens[index]!;
   }
 
   private previous(): Token {
@@ -374,7 +432,7 @@ export class Parser {
       
       if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || this.check(TokenType.VOID) || 
           this.check(TokenType.STRUCT) || this.check(TokenType.UNSIGNED) || this.check(TokenType.SIGNED) ||
-          this.check(TokenType.LONG) || this.check(TokenType.SHORT)) {
+          this.check(TokenType.LONG) || this.check(TokenType.SHORT) || this.check(TokenType.FLOAT) || this.check(TokenType.DOUBLE)) {
         // Special handling for struct definitions
         if (this.check(TokenType.STRUCT)) {
           const savedPosition = this.current;
@@ -409,11 +467,17 @@ export class Parser {
   }
 
   private parseDeclaration(): FunctionDeclarationNode | DeclarationNode | null {
+    // Handle storage class specifiers
+    let storageClass: string | undefined;
+    if (this.match(TokenType.EXTERN) || this.match(TokenType.STATIC) || this.match(TokenType.INLINE)) {
+      storageClass = this.previous().value;
+    }
+    
     const typeSpecifier = this.parseTypeSpecifier();
     const name = this.consume(TokenType.IDENTIFIER, 'Expected identifier after type');
     
     if (this.check(TokenType.LEFT_PAREN)) {
-      return this.parseFunctionDeclaration(typeSpecifier, name.value);
+      return this.parseFunctionDeclaration(typeSpecifier, name.value, storageClass);
     } else if (this.check(TokenType.SEMICOLON) || this.check(TokenType.ASSIGN)) {
       return this.parseVariableDeclaration(typeSpecifier, name.value);
     } else {
@@ -423,6 +487,11 @@ export class Parser {
   }
 
   private parseTypeSpecifier(): TypeSpecifierNode {
+    const qualifiers: ('const' | 'volatile' | 'restrict')[] = [];
+    while (this.match(TokenType.CONST, TokenType.VOLATILE, TokenType.RESTRICT)) {
+      qualifiers.push(this.previous().value as any);
+    }
+
     const token = this.advance();
     let typeName = token.value;
     
@@ -438,6 +507,7 @@ export class Parser {
         typeName: typedefType.typeName,
         isPointer: typedefType.isPointer || pointerCount > 0,
         pointerCount: typedefType.pointerCount + pointerCount,
+        qualifiers: [...qualifiers, ...(typedefType.qualifiers || [])],
         line: token.line,
         column: token.column,
       };
@@ -464,7 +534,8 @@ export class Parser {
           if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || 
               this.check(TokenType.VOID) || this.check(TokenType.STRUCT) ||
               this.check(TokenType.LONG) || this.check(TokenType.SHORT) ||
-              this.check(TokenType.UNSIGNED) || this.check(TokenType.SIGNED)) {
+              this.check(TokenType.UNSIGNED) || this.check(TokenType.SIGNED) ||
+              this.check(TokenType.FLOAT) || this.check(TokenType.DOUBLE)) {
             const memberType = this.parseTypeSpecifier();
             const memberName = this.consume(TokenType.IDENTIFIER, 'Expected member name');
             
@@ -544,17 +615,23 @@ export class Parser {
       typeName,
       isPointer: pointerCount > 0,
       pointerCount,
+      qualifiers,
       line: token.line,
       column: token.column,
     };
   }
 
-  private parseFunctionDeclaration(returnType: TypeSpecifierNode, name: string): FunctionDeclarationNode {
+  private parseFunctionDeclaration(returnType: TypeSpecifierNode, name: string, storageClass?: string): FunctionDeclarationNode {
     this.consume(TokenType.LEFT_PAREN, 'Expected \'(\' after function name');
     const parameters = this.parseParameters();
     this.consume(TokenType.RIGHT_PAREN, 'Expected \')\' after parameters');
     
-    const body = this.parseCompoundStatement();
+    let body: CompoundStatementNode | undefined;
+    if (this.check(TokenType.LEFT_BRACE)) {
+      body = this.parseCompoundStatement();
+    } else {
+      this.consume(TokenType.SEMICOLON, "Expected ';' after function declaration");
+    }
     
     return {
       type: NodeType.FUNCTION_DECLARATION,
@@ -562,6 +639,7 @@ export class Parser {
       name,
       parameters,
       body,
+      storageClass: storageClass as any,
       line: returnType.line,
       column: returnType.column,
     };
@@ -659,10 +737,22 @@ export class Parser {
   private typedefs: Map<string, TypeSpecifierNode> = new Map();
 
   private parseStatement(): StatementNode {
+    // Label (identifier followed by colon)
+    if (this.check(TokenType.IDENTIFIER) && this.peek(1).type === TokenType.COLON) {
+      const labelToken = this.consume(TokenType.IDENTIFIER, 'Expected label');
+      this.consume(TokenType.COLON, 'Expected \':\' after label');
+      return {
+        type: NodeType.LABEL_STATEMENT,
+        name: labelToken.value,
+        line: labelToken.line,
+        column: labelToken.column,
+      };
+    }
+    
     // Declaration
     if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || this.check(TokenType.VOID) || 
         this.check(TokenType.STRUCT) || this.check(TokenType.UNSIGNED) || this.check(TokenType.SIGNED) ||
-        this.check(TokenType.LONG) || this.check(TokenType.SHORT)) {
+        this.check(TokenType.LONG) || this.check(TokenType.SHORT) || this.check(TokenType.FLOAT) || this.check(TokenType.DOUBLE)) {
       const typeSpecifier = this.parseTypeSpecifier();
       const name = this.consume(TokenType.IDENTIFIER, 'Expected identifier after type');
       return this.parseVariableDeclaration(typeSpecifier, name.value);
@@ -708,9 +798,36 @@ export class Parser {
       return this.parseWhileStatement();
     }
     
+    // Do-while statement
+    if (this.match(TokenType.DO)) {
+      return this.parseDoWhileStatement();
+    }
+    
     // For statement
     if (this.match(TokenType.FOR)) {
       return this.parseForStatement();
+    }
+    
+    // Goto statement
+    if (this.match(TokenType.GOTO)) {
+      const label = this.consume(TokenType.IDENTIFIER, 'Expected label after goto');
+      this.consume(TokenType.SEMICOLON, "Expected ';' after goto");
+      return {
+        type: NodeType.GOTO_STATEMENT,
+        label: label.value,
+        line: label.line,
+        column: label.column,
+      };
+    }
+    
+    // Enum declaration
+    if (this.match(TokenType.ENUM)) {
+      return this.parseEnumDeclaration();
+    }
+    
+    // Union declaration
+    if (this.match(TokenType.UNION)) {
+      return this.parseUnionDeclaration();
     }
     
     // Return statement
@@ -825,6 +942,88 @@ export class Parser {
     };
   }
 
+  private parseDoWhileStatement(): DoWhileStatementNode {
+    const body = this.parseStatement();
+    this.consume(TokenType.WHILE, 'Expected while after do');
+    this.consume(TokenType.LEFT_PAREN, 'Expected \'(\' after while');
+    const condition = this.parseExpression();
+    this.consume(TokenType.RIGHT_PAREN, 'Expected \')\' after while condition');
+    this.consume(TokenType.SEMICOLON, 'Expected \';\' after do-while');
+    
+    return {
+      type: NodeType.DO_WHILE_STATEMENT,
+      body,
+      condition,
+      line: body.line,
+      column: body.column,
+    };
+  }
+
+  private parseEnumDeclaration(): EnumDeclarationNode {
+    const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected enum name');
+    const name = nameToken.value;
+    
+    this.consume(TokenType.LEFT_BRACE, 'Expected \'{\' after enum name');
+    const values: EnumValueNode[] = [];
+    
+    if (!this.check(TokenType.RIGHT_BRACE)) {
+      do {
+        const valueName = this.consume(TokenType.IDENTIFIER, 'Expected enum value name');
+        let value: ExpressionNode | undefined;
+        
+        if (this.match(TokenType.ASSIGN)) {
+          value = this.parseExpression();
+        }
+        
+        values.push({
+          type: NodeType.ENUM_DECLARATION,
+          name: valueName.value,
+          value,
+          line: valueName.line,
+          column: valueName.column,
+        });
+      } while (this.match(TokenType.COMMA));
+    }
+    
+    this.consume(TokenType.RIGHT_BRACE, 'Expected \'}\' after enum values');
+    this.consume(TokenType.SEMICOLON, 'Expected \';\' after enum declaration');
+    
+    return {
+      type: NodeType.ENUM_DECLARATION,
+      name,
+      values,
+      line: nameToken.line,
+      column: nameToken.column,
+    };
+  }
+
+  private parseUnionDeclaration(): UnionDeclarationNode {
+    const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected union name');
+    const name = nameToken.value;
+    
+    this.consume(TokenType.LEFT_BRACE, 'Expected \'{\' after union name');
+    const fields: DeclarationNode[] = [];
+    
+    while (!this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+      const fieldType = this.parseTypeSpecifier();
+      const fieldName = this.consume(TokenType.IDENTIFIER, 'Expected field name');
+      const field = this.parseVariableDeclaration(fieldType, fieldName.value);
+      this.consume(TokenType.SEMICOLON, 'Expected \';\' after union field');
+      fields.push(field);
+    }
+    
+    this.consume(TokenType.RIGHT_BRACE, 'Expected \'}\' after union fields');
+    this.consume(TokenType.SEMICOLON, 'Expected \';\' after union declaration');
+    
+    return {
+      type: NodeType.UNION_DECLARATION,
+      name,
+      fields,
+      line: nameToken.line,
+      column: nameToken.column,
+    };
+  }
+
   private parseReturnStatement(): ReturnStatementNode {
     let value: ExpressionNode | undefined;
     
@@ -854,32 +1053,98 @@ export class Parser {
   }
 
   private parseExpression(): ExpressionNode {
-    return this.parseAssignment();
+    return this.parseComma();
+  }
+
+  private parseComma(): ExpressionNode {
+    let expr = this.parseAssignment();
+    
+    while (this.match(TokenType.COMMA)) {
+      const operator = this.previous().value;
+      const right = this.parseAssignment();
+      expr = {
+        type: NodeType.BINARY_EXPRESSION,
+        operator,
+        left: expr,
+        right,
+        line: expr.line,
+        column: expr.column,
+      };
+    }
+    
+    return expr;
   }
 
   private parseAssignment(): ExpressionNode {
-    const expr = this.parseLogicalOr();
+    const expr = this.parseTernary();
     
-    if (this.match(TokenType.ASSIGN)) {
+    if (this.match(TokenType.ASSIGN) || 
+        this.match(TokenType.PLUS_ASSIGN) ||
+        this.match(TokenType.MINUS_ASSIGN) ||
+        this.match(TokenType.MULTIPLY_ASSIGN) ||
+        this.match(TokenType.DIVIDE_ASSIGN) ||
+        this.match(TokenType.MODULO_ASSIGN) ||
+        this.match(TokenType.AND_ASSIGN) ||
+        this.match(TokenType.OR_ASSIGN) ||
+        this.match(TokenType.XOR_ASSIGN) ||
+        this.match(TokenType.LEFT_SHIFT_ASSIGN) ||
+        this.match(TokenType.RIGHT_SHIFT_ASSIGN)) {
+      const operatorToken = this.previous();
       const value = this.parseAssignment();
       
       // Allow assignment to identifiers, member access, and array access
       if (expr.type === NodeType.IDENTIFIER || 
           expr.type === NodeType.MEMBER_ACCESS || 
           expr.type === NodeType.ARRAY_ACCESS) {
+        
+        let finalValue = value;
+        if (operatorToken.type !== TokenType.ASSIGN) {
+          // Desugar: x += y  =>  x = x + y
+          const op = operatorToken.value.slice(0, -1); // remove '='
+          finalValue = {
+            type: NodeType.BINARY_EXPRESSION,
+            operator: op,
+            left: expr,
+            right: value,
+            line: operatorToken.line,
+            column: operatorToken.column,
+          };
+        }
+
         return {
           type: NodeType.ASSIGNMENT,
           target: expr,
-          value,
+          value: finalValue,
           line: expr.line,
           column: expr.column,
         };
       }
       
-      this.error(this.previous(), 'Invalid assignment target');
+      this.error(operatorToken, 'Invalid assignment target');
     }
     
     return expr;
+  }
+
+  private parseTernary(): ExpressionNode {
+    const condition = this.parseLogicalOr();
+    
+    if (this.match(TokenType.QUESTION)) {
+      const thenBranch = this.parseAssignment();
+      this.consume(TokenType.COLON, 'Expected \':\' in ternary expression');
+      const elseBranch = this.parseAssignment();
+      
+      return {
+        type: NodeType.TERNARY_EXPRESSION,
+        condition,
+        thenBranch,
+        elseBranch,
+        line: condition.line,
+        column: condition.column,
+      };
+    }
+    
+    return condition;
   }
 
   private parseLogicalOr(): ExpressionNode {
@@ -902,9 +1167,66 @@ export class Parser {
   }
 
   private parseLogicalAnd(): ExpressionNode {
-    let expr = this.parseEquality();
+    let expr = this.parseBitwiseOr();
     
     while (this.match(TokenType.AND)) {
+      const operator = this.previous().value;
+      const right = this.parseBitwiseOr();
+      expr = {
+        type: NodeType.BINARY_EXPRESSION,
+        operator,
+        left: expr,
+        right,
+        line: expr.line,
+        column: expr.column,
+      };
+    }
+    
+    return expr;
+  }
+
+  private parseBitwiseOr(): ExpressionNode {
+    let expr = this.parseBitwiseXor();
+    
+    while (this.match(TokenType.BITWISE_OR)) {
+      const operator = this.previous().value;
+      const right = this.parseBitwiseXor();
+      expr = {
+        type: NodeType.BINARY_EXPRESSION,
+        operator,
+        left: expr,
+        right,
+        line: expr.line,
+        column: expr.column,
+      };
+    }
+    
+    return expr;
+  }
+
+  private parseBitwiseXor(): ExpressionNode {
+    let expr = this.parseBitwiseAnd();
+    
+    while (this.match(TokenType.BITWISE_XOR)) {
+      const operator = this.previous().value;
+      const right = this.parseBitwiseAnd();
+      expr = {
+        type: NodeType.BINARY_EXPRESSION,
+        operator,
+        left: expr,
+        right,
+        line: expr.line,
+        column: expr.column,
+      };
+    }
+    
+    return expr;
+  }
+
+  private parseBitwiseAnd(): ExpressionNode {
+    let expr = this.parseEquality();
+    
+    while (this.match(TokenType.BITWISE_AND)) {
       const operator = this.previous().value;
       const right = this.parseEquality();
       expr = {
@@ -1147,6 +1469,22 @@ export class Parser {
         expr = {
           type: NodeType.MEMBER_ACCESS,
           object: expr,
+          member: memberToken.value,
+          line: expr.line,
+          column: expr.column,
+        };
+      } else if (this.match(TokenType.ARROW)) {
+        // Arrow operator: ptr->member (desugar to (*ptr).member)
+        const memberToken = this.consume(TokenType.IDENTIFIER, "Expected member name after '->'");
+        expr = {
+          type: NodeType.MEMBER_ACCESS,
+          object: {
+            type: NodeType.UNARY_EXPRESSION,
+            operator: '*',
+            operand: expr,
+            line: expr.line,
+            column: expr.column,
+          },
           member: memberToken.value,
           line: expr.line,
           column: expr.column,

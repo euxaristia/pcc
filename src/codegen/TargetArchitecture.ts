@@ -1,10 +1,11 @@
-import { IRModule, IRFunction, IRBlock, IRInstruction, IRValue, IRConstant, IRJump, IRJumpIf, IRCall, IRRet, IROpCode, IRType, isPointerType } from './IR';
+import { IRModule, IRFunction, IRBlock, IRInstruction, IRValue, IRConstant, IRJump, IRJumpIf, IRCall, IRRet, IROpCode, IRType, isPointerType, isFloatingPointType } from './IR';
 
 export interface Register {
   name: string;
   number: number;
   callerSave: boolean;
   argument?: number; // Argument number if it's an argument register
+  isXMM?: boolean;
 }
 
 export interface StackSlot {
@@ -15,9 +16,12 @@ export interface StackSlot {
 
 export interface CallingConvention {
   argumentRegisters: Register[];
+  floatArgumentRegisters: Register[];
   callerSaveRegisters: Register[];
+  floatCallerSaveRegisters: Register[];
   calleeSaveRegisters: Register[];
   returnRegister: Register;
+  floatReturnRegister: Register;
   stackAlignment: number;
 }
 
@@ -31,6 +35,16 @@ export const X8664CallingConvention: CallingConvention = {
     { name: 'r8', number: 4, callerSave: true, argument: 4 },
     { name: 'r9', number: 5, callerSave: true, argument: 5 },
   ],
+  floatArgumentRegisters: [
+    { name: 'xmm0', number: 0, callerSave: true, argument: 0, isXMM: true },
+    { name: 'xmm1', number: 1, callerSave: true, argument: 1, isXMM: true },
+    { name: 'xmm2', number: 2, callerSave: true, argument: 2, isXMM: true },
+    { name: 'xmm3', number: 3, callerSave: true, argument: 3, isXMM: true },
+    { name: 'xmm4', number: 4, callerSave: true, argument: 4, isXMM: true },
+    { name: 'xmm5', number: 5, callerSave: true, argument: 5, isXMM: true },
+    { name: 'xmm6', number: 6, callerSave: true, argument: 6, isXMM: true },
+    { name: 'xmm7', number: 7, callerSave: true, argument: 7, isXMM: true },
+  ],
   callerSaveRegisters: [
     { name: 'rax', number: 0, callerSave: true },
     { name: 'rcx', number: 1, callerSave: true },
@@ -42,6 +56,24 @@ export const X8664CallingConvention: CallingConvention = {
     { name: 'r10', number: 7, callerSave: true },
     { name: 'r11', number: 8, callerSave: true },
   ],
+  floatCallerSaveRegisters: [
+    { name: 'xmm0', number: 0, callerSave: true, isXMM: true },
+    { name: 'xmm1', number: 1, callerSave: true, isXMM: true },
+    { name: 'xmm2', number: 2, callerSave: true, isXMM: true },
+    { name: 'xmm3', number: 3, callerSave: true, isXMM: true },
+    { name: 'xmm4', number: 4, callerSave: true, isXMM: true },
+    { name: 'xmm5', number: 5, callerSave: true, isXMM: true },
+    { name: 'xmm6', number: 6, callerSave: true, isXMM: true },
+    { name: 'xmm7', number: 7, callerSave: true, isXMM: true },
+    { name: 'xmm8', number: 8, callerSave: true, isXMM: true },
+    { name: 'xmm9', number: 9, callerSave: true, isXMM: true },
+    { name: 'xmm10', number: 10, callerSave: true, isXMM: true },
+    { name: 'xmm11', number: 11, callerSave: true, isXMM: true },
+    { name: 'xmm12', number: 12, callerSave: true, isXMM: true },
+    { name: 'xmm13', number: 13, callerSave: true, isXMM: true },
+    { name: 'xmm14', number: 14, callerSave: true, isXMM: true },
+    { name: 'xmm15', number: 15, callerSave: true, isXMM: true },
+  ],
   calleeSaveRegisters: [
     { name: 'rbx', number: 0, callerSave: false },
     { name: 'r12', number: 2, callerSave: false },
@@ -50,6 +82,7 @@ export const X8664CallingConvention: CallingConvention = {
     { name: 'r15', number: 5, callerSave: false },
   ],
   returnRegister: { name: 'rax', number: 0, callerSave: true },
+  floatReturnRegister: { name: 'xmm0', number: 0, callerSave: true, isXMM: true },
   stackAlignment: 16,
 };
 
@@ -62,22 +95,35 @@ export class RegisterAllocator {
     this.callingConvention = callingConvention;
   }
 
-  allocateRegister(valueId: string): Register | null {
-    // First, try caller-save registers
-    for (const reg of this.callingConvention.callerSaveRegisters) {
-      if (!this.allocatedRegisters.has(reg)) {
-        this.allocatedRegisters.add(reg);
-        this.variableRegisters.set(valueId, reg);
-        return reg;
-      }
-    }
+  allocateRegister(valueId: string, type: IRType): Register | null {
+    const isFloat = isFloatingPointType(type);
     
-    // If no caller-save registers available, use callee-save registers
-    for (const reg of this.callingConvention.calleeSaveRegisters) {
-      if (!this.allocatedRegisters.has(reg)) {
-        this.allocatedRegisters.add(reg);
-        this.variableRegisters.set(valueId, reg);
-        return reg;
+    if (isFloat) {
+      // Allocate XMM register
+      for (const reg of this.callingConvention.floatCallerSaveRegisters) {
+        if (!this.allocatedRegisters.has(reg)) {
+          this.allocatedRegisters.add(reg);
+          this.variableRegisters.set(valueId, reg);
+          return reg;
+        }
+      }
+    } else {
+      // First, try caller-save registers
+      for (const reg of this.callingConvention.callerSaveRegisters) {
+        if (!this.allocatedRegisters.has(reg)) {
+          this.allocatedRegisters.add(reg);
+          this.variableRegisters.set(valueId, reg);
+          return reg;
+        }
+      }
+      
+      // If no caller-save registers available, use callee-save registers
+      for (const reg of this.callingConvention.calleeSaveRegisters) {
+        if (!this.allocatedRegisters.has(reg)) {
+          this.allocatedRegisters.add(reg);
+          this.variableRegisters.set(valueId, reg);
+          return reg;
+        }
       }
     }
     
@@ -246,18 +292,28 @@ export class InstructionSelector {
     const leftStr = this.getOperandString(left, getValue);
     const rightStr = this.getOperandString(right, getValue);
     
-    const resultReg = this.registerAllocator.allocateRegister(instruction.id);
+    const resultReg = this.registerAllocator.allocateRegister(instruction.id, instruction.type);
     if (!resultReg) {
       throw new Error('No available registers for binary operation');
     }
     
     const assembly: string[] = [];
-    
-    // Move left operand to result register
-    assembly.push(`mov ${leftStr}, ${resultReg.name}`);
-    
-    // Perform operation
-    assembly.push(`${mnemonic} ${rightStr}, ${resultReg.name}`);
+    const isFloat = isFloatingPointType(instruction.type);
+    let opMnemonic = mnemonic;
+
+    if (isFloat) {
+      if (mnemonic === 'add') opMnemonic = instruction.type === IRType.F32 ? 'addss' : 'addsd';
+      else if (mnemonic === 'sub') opMnemonic = instruction.type === IRType.F32 ? 'subss' : 'subsd';
+      
+      const movMnemonic = instruction.type === IRType.F32 ? 'movss' : 'movsd';
+      assembly.push(`${movMnemonic} ${leftStr}, ${resultReg.name}`);
+      assembly.push(`${opMnemonic} ${rightStr}, ${resultReg.name}`);
+    } else {
+      // Move left operand to result register
+      assembly.push(`mov ${leftStr}, ${resultReg.name}`);
+      // Perform operation
+      assembly.push(`${opMnemonic} ${rightStr}, ${resultReg.name}`);
+    }
     
     return assembly;
   }
@@ -270,18 +326,24 @@ export class InstructionSelector {
     const leftStr = this.getOperandString(left, getValue);
     const rightStr = this.getOperandString(right, getValue);
     
-    const resultReg = this.registerAllocator.allocateRegister(instruction.id);
+    const resultReg = this.registerAllocator.allocateRegister(instruction.id, instruction.type);
     if (!resultReg) {
       throw new Error('No available registers for multiply');
     }
     
     const assembly: string[] = [];
     
-    // Move left operand to result register
-    assembly.push(`mov ${leftStr}, ${resultReg.name}`);
-    
-    // Multiply
-    assembly.push(`imul ${rightStr}, ${resultReg.name}`);
+    if (isFloatingPointType(instruction.type)) {
+      const movMnemonic = instruction.type === IRType.F32 ? 'movss' : 'movsd';
+      const mulMnemonic = instruction.type === IRType.F32 ? 'mulss' : 'mulsd';
+      assembly.push(`${movMnemonic} ${leftStr}, ${resultReg.name}`);
+      assembly.push(`${mulMnemonic} ${rightStr}, ${resultReg.name}`);
+    } else {
+      // Move left operand to result register
+      assembly.push(`mov ${leftStr}, ${resultReg.name}`);
+      // Multiply
+      assembly.push(`imul ${rightStr}, ${resultReg.name}`);
+    }
     
     return assembly;
   }
@@ -294,6 +356,19 @@ export class InstructionSelector {
     const leftStr = this.getOperandString(left, getValue);
     const rightStr = this.getOperandString(right, getValue);
     
+    if (isFloatingPointType(instruction.type)) {
+      const resultReg = this.registerAllocator.allocateRegister(instruction.id, instruction.type);
+      if (!resultReg) {
+        throw new Error('No available registers for divide result');
+      }
+      const movMnemonic = instruction.type === IRType.F32 ? 'movss' : 'movsd';
+      const divMnemonic = instruction.type === IRType.F32 ? 'divss' : 'divsd';
+      const assembly: string[] = [];
+      assembly.push(`${movMnemonic} ${leftStr}, ${resultReg.name}`);
+      assembly.push(`${divMnemonic} ${rightStr}, ${resultReg.name}`);
+      return assembly;
+    }
+
     // Division uses rax:rdx register pair
     const assembly: string[] = [];
     
@@ -311,7 +386,7 @@ export class InstructionSelector {
     assembly.push(`idiv ${rightStr}`);
     
     // Move result from rax to target register
-    const resultReg = this.registerAllocator.allocateRegister(instruction.id);
+    const resultReg = this.registerAllocator.allocateRegister(instruction.id, instruction.type);
     if (!resultReg) {
       throw new Error('No available registers for divide result');
     }
@@ -349,7 +424,7 @@ export class InstructionSelector {
     assembly.push(`idiv ${rightStr}`);
     
     // Move remainder from rdx to target register
-    const resultReg = this.registerAllocator.allocateRegister(instruction.id);
+    const resultReg = this.registerAllocator.allocateRegister(instruction.id, instruction.type);
     if (!resultReg) {
       throw new Error('No available registers for modulo result');
     }
@@ -372,18 +447,38 @@ export class InstructionSelector {
     const rightStr = this.getOperandString(right, getValue);
     
     const assembly: string[] = [];
-    
-    // Compare operands
-    assembly.push(`cmp ${leftStr}, ${rightStr}`);
-    
-    // Set result register based on comparison
-    const resultReg = this.registerAllocator.allocateRegister(instruction.id);
-    if (!resultReg) {
-      throw new Error('No available registers for comparison');
+    const isFloat = isFloatingPointType(instruction.operands[0].type);
+
+    if (isFloat) {
+      const cmpMnemonic = instruction.operands[0].type === IRType.F32 ? 'ucomiss' : 'ucomisd';
+      // ucomiss dest, src -> dest - src. We want left - right.
+      assembly.push(`${cmpMnemonic} ${rightStr}, ${leftStr}`);
+      
+      let floatSetInstr = setInstr;
+      if (setInstr === 'setl') floatSetInstr = 'setb';
+      else if (setInstr === 'setle') floatSetInstr = 'setbe';
+      else if (setInstr === 'setg') floatSetInstr = 'seta';
+      else if (setInstr === 'setge') floatSetInstr = 'setae';
+      
+      const resultReg = this.registerAllocator.allocateRegister(instruction.id, instruction.type);
+      if (!resultReg) {
+        throw new Error('No available registers for comparison');
+      }
+      
+      assembly.push(`xor ${resultReg.name}, ${resultReg.name}`);
+      assembly.push(`${floatSetInstr} ${resultReg.name}`);
+    } else {
+      // Compare operands: cmp dest, src -> dest - src. We want left - right.
+      assembly.push(`cmp ${rightStr}, ${leftStr}`);
+      
+      const resultReg = this.registerAllocator.allocateRegister(instruction.id, instruction.type);
+      if (!resultReg) {
+        throw new Error('No available registers for comparison');
+      }
+      
+      assembly.push(`xor ${resultReg.name}, ${resultReg.name}`);
+      assembly.push(`${setInstr} ${resultReg.name}`);
     }
-    
-    assembly.push(`xor ${resultReg.name}, ${resultReg.name}`); // Clear register
-    assembly.push(`${setInstr} ${resultReg.name}`); // Set to 0 or 1
     
     return assembly;
   }
@@ -397,7 +492,7 @@ export class InstructionSelector {
     const leftStr = this.getOperandString(left, getValue);
     const rightStr = this.getOperandString(right, getValue);
     
-    const resultReg = this.registerAllocator.allocateRegister(instruction.id);
+    const resultReg = this.registerAllocator.allocateRegister(instruction.id, instruction.type);
     if (!resultReg) {
       throw new Error('No available registers for logical operation');
     }
@@ -420,7 +515,7 @@ export class InstructionSelector {
     const [operand] = instruction.operands;
     const operandStr = this.getOperandString(operand, getValue);
     
-    const resultReg = this.registerAllocator.allocateRegister(instruction.id);
+    const resultReg = this.registerAllocator.allocateRegister(instruction.id, instruction.type);
     if (!resultReg) {
       throw new Error('No available registers for not operation');
     }
@@ -444,17 +539,20 @@ export class InstructionSelector {
     const [address] = instruction.operands;
     const addressStr = this.getOperandString(address, getValue);
     
-    const resultReg = this.registerAllocator.allocateRegister(instruction.id);
+    const resultReg = this.registerAllocator.allocateRegister(instruction.id, instruction.type);
     if (!resultReg) {
       throw new Error('No available registers for load');
     }
 
+    const isFloat = isFloatingPointType(instruction.type);
+    const movMnemonic = isFloat ? (instruction.type === IRType.F32 ? 'movss' : 'movsd') : 'mov';
+
     // If it's a pointer dereference (e.g., loading from an address held in a register)
-    if (addressStr.startsWith('r') || addressStr.startsWith('e')) {
-       return [`mov (${addressStr}), ${resultReg.name}`];
+    if (addressStr.startsWith('r') || addressStr.startsWith('e') || addressStr.startsWith('xmm')) {
+       return [`${movMnemonic} (${addressStr}), ${resultReg.name}`];
     }
     
-    return [`mov ${addressStr}, ${resultReg.name}`];
+    return [`${movMnemonic} ${addressStr}, ${resultReg.name}`];
   }
 
   private selectStoreInstruction(
@@ -465,12 +563,15 @@ export class InstructionSelector {
     const valueStr = this.getOperandString(value, getValue);
     const addressStr = this.getOperandString(address, getValue);
     
+    const isFloat = isFloatingPointType(value.type);
+    const movMnemonic = isFloat ? (value.type === IRType.F32 ? 'movss' : 'movsd') : 'mov';
+
     // If it's a pointer dereference (e.g., storing to an address held in a register)
-    if (addressStr.startsWith('r') || addressStr.startsWith('e')) {
-       return [`mov ${valueStr}, (${addressStr})`];
+    if (addressStr.startsWith('r') || addressStr.startsWith('e') || addressStr.startsWith('xmm')) {
+       return [`${movMnemonic} ${valueStr}, (${addressStr})`];
     }
 
-    return [`mov ${valueStr}, ${addressStr}`];
+    return [`${movMnemonic} ${valueStr}, ${addressStr}`];
   }
 
   private getOperandString(operand: IRValue | IRConstant, getValue: (id: string) => string): string {

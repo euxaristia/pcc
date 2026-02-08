@@ -1,6 +1,6 @@
 import {
   IRModule, IRFunction, IRBlock, IRInstruction, IRValue, IRConstant,
-  IRJump, IRJumpIf, IRCall, IRRet, IROpCode, IRType
+  IRJump, IRJumpIf, IRCall, IRRet, IROpCode, IRType, isFloatingPointType
 } from './IR';
 import {
   X8664CallingConvention, InstructionSelector, RegisterAllocator, StackManager
@@ -53,11 +53,11 @@ export class X8664AssemblyGenerator {
       dataSection += `  ${global.name}:\n`;
       
       if (global.initializer !== undefined) {
-        if (global.type === IRType.I32) {
+        if (global.type === IRType.I32 || global.type === IRType.F32) {
           dataSection += `  .long ${global.initializer.value}\n`;
         } else if (global.type === IRType.I8) {
           dataSection += `  .byte ${global.initializer.value}\n`;
-        } else if (global.type === IRType.I64) {
+        } else if (global.type === IRType.I64 || global.type === IRType.F64) {
           dataSection += `  .quad ${global.initializer.value}\n`;
         }
       } else {
@@ -106,11 +106,6 @@ export class X8664AssemblyGenerator {
     this.instructionSelector.getRegisterAllocator().freeAllRegisters();
     this.instructionSelector.getStackManager().reset();
 
-    // Allocate stack space for parameters if they are moved to stack (simplified)
-    for (const param of func.parameters) {
-       // parameters are currently handled as locals if they are ALLOCA'd in the IR
-    }
-
     // Initial stack allocation for declared locals
     for (const local of func.locals) {
       const size = this.getTypeSize(local.type);
@@ -128,7 +123,7 @@ export class X8664AssemblyGenerator {
     // Build the final assembly with correct stack sizes
     let assembly = prologue;
     assembly += '  push rbp\n';
-    assembly += '  mov rsp, rbp\n';
+    assembly += '  mov rbp, rsp\n';
     
     if (finalStackSize > 0) {
       assembly += `  sub rsp, ${finalStackSize}\n`;
@@ -159,15 +154,21 @@ export class X8664AssemblyGenerator {
       // Check if it's a stack location
       const stackSlot = this.instructionSelector.getStackManager().getStackSlot(valueId);
       if (stackSlot) {
-        return `[rbp - ${stackSlot.offset + this.getTypeSize(IRType.PTR)}]`; // +8 to skip saved RBP
+        return `[rbp - ${stackSlot.offset + 8}]`; // +8 to skip saved RBP
       }
 
       // Check if it's a function parameter
       const paramIndex = func.parameters.findIndex(p => p.name === valueId);
       if (paramIndex >= 0) {
-        const argReg = X8664CallingConvention.argumentRegisters[paramIndex];
-        if (argReg) {
-          return argReg.name;
+        const param = func.parameters[paramIndex];
+        if (isFloatingPointType(param.type)) {
+          const argReg = X8664CallingConvention.floatArgumentRegisters[paramIndex]; // Simplified: assumes params are either all float or all int in their respective registers
+          // Actually, System V ABI is more complex (it uses separate counters for int and float params)
+          // For a simple compiler, we might just assume they use the same index but different registers.
+          if (argReg) return argReg.name;
+        } else {
+          const argReg = X8664CallingConvention.argumentRegisters[paramIndex];
+          if (argReg) return argReg.name;
         }
       }
 
@@ -187,11 +188,9 @@ export class X8664AssemblyGenerator {
             this.getTypeSize(irInstr.type)
           );
           // Register the stack location
-          const reg = this.instructionSelector.getRegisterAllocator().allocateRegister(irInstr.id);
+          const reg = this.instructionSelector.getRegisterAllocator().allocateRegister(irInstr.id, IRType.PTR);
           if (reg) {
-             // Offset is from RBP, so it should be negative
-             // +8 to skip saved RBP
-            assembly += `  lea [rbp - ${stackSlot.offset + this.getTypeSize(IRType.PTR)}], ${reg.name}\n`;
+            assembly += `  lea ${reg.name}, [rbp - ${stackSlot.offset + 8}]\n`;
           }
           continue;
         }
@@ -219,15 +218,34 @@ export class X8664AssemblyGenerator {
         for (const reg of X8664CallingConvention.callerSaveRegisters) {
           assembly += `  push ${reg.name}\n`;
         }
+        // Also save float caller-save registers
+        for (const reg of X8664CallingConvention.floatCallerSaveRegisters) {
+           // assembly += `  sub rsp, 8\n  movsd [rsp], ${reg.name}\n`; // Simplified
+        }
 
-        for (let i = 0; i < call.args.length && i < 6; i++) {
+        let intArgCount = 0;
+        let floatArgCount = 0;
+        for (let i = 0; i < call.args.length; i++) {
           const arg = call.args[i];
-          const argReg = X8664CallingConvention.argumentRegisters[i];
-          let argLocation = 'value' in arg ? `$${arg.value}` : getValueLocation(arg.id);
-          assembly += `  mov ${argLocation}, ${argReg.name}\n`;
+          if (isFloatingPointType(arg.type)) {
+            if (floatArgCount < 8) {
+              const argReg = X8664CallingConvention.floatArgumentRegisters[floatArgCount++];
+              let argLocation = 'value' in arg ? `$${arg.value}` : getValueLocation(arg.id);
+              const movMnemonic = arg.type === IRType.F32 ? 'movss' : 'movsd';
+              assembly += `  ${movMnemonic} ${argLocation}, ${argReg.name}\n`;
+            }
+          } else {
+            if (intArgCount < 6) {
+              const argReg = X8664CallingConvention.argumentRegisters[intArgCount++];
+              let argLocation = 'value' in arg ? `$${arg.value}` : getValueLocation(arg.id);
+              assembly += `  mov ${argReg.name}, ${argLocation}\n`; // Intel: mov dest, src
+            }
+          }
         }
 
         assembly += `  call ${call.callee}\n`;
+
+        // Restore registers...
 
         for (let i = X8664CallingConvention.callerSaveRegisters.length - 1; i >= 0; i--) {
           const reg = X8664CallingConvention.callerSaveRegisters[i];
@@ -235,17 +253,23 @@ export class X8664AssemblyGenerator {
         }
 
         if (call.type !== IRType.VOID) {
-          const resultReg = this.instructionSelector.getRegisterAllocator().allocateRegister(call.callee);
-          if (resultReg && resultReg.name !== X8664CallingConvention.returnRegister.name) {
-            assembly += `  mov ${X8664CallingConvention.returnRegister.name}, ${resultReg.name}\n`;
+          const resultReg = this.instructionSelector.getRegisterAllocator().allocateRegister(call.callee, call.type);
+          const returnReg = isFloatingPointType(call.type) ? X8664CallingConvention.floatReturnRegister : X8664CallingConvention.returnRegister;
+          if (resultReg && resultReg.name !== returnReg.name) {
+            const movMnemonic = isFloatingPointType(call.type) ? (call.type === IRType.F32 ? 'movss' : 'movsd') : 'mov';
+            assembly += `  ${movMnemonic} ${resultReg.name}, ${returnReg.name}\n`;
           }
         }
       } else if ('value' in instr || (instr as any).type === 'ret') {
         const ret = instr as IRRet;
         
         if (ret.value) {
+          const isFloat = isFloatingPointType(ret.type);
+          const returnReg = isFloat ? X8664CallingConvention.floatReturnRegister : X8664CallingConvention.returnRegister;
+          const movMnemonic = isFloat ? (ret.type === IRType.F32 ? 'movss' : 'movsd') : 'mov';
+          
           let retLocation = 'value' in ret.value ? `$${ret.value.value}` : getValueLocation(ret.value.id);
-          assembly += `  mov ${retLocation}, ${X8664CallingConvention.returnRegister.name}\n`;
+          assembly += `  ${movMnemonic} ${returnReg.name}, ${retLocation}\n`;
         }
 
         for (let i = X8664CallingConvention.calleeSaveRegisters.length - 1; i >= 0; i--) {

@@ -15,13 +15,33 @@ export interface FunctionSignature {
 export class TypeChecker {
   private functionSignatures: Map<string, FunctionSignature> = new Map();
 
+  private isNumeric(type: DataType): boolean {
+    return !type.isPointer && [BaseType.INT, BaseType.CHAR, BaseType.LONG, BaseType.FLOAT, BaseType.DOUBLE].includes(type.baseType);
+  }
+
+  private isFloatingPoint(type: DataType): boolean {
+    return !type.isPointer && [BaseType.FLOAT, BaseType.DOUBLE].includes(type.baseType);
+  }
+
+  private getPromotedType(left: DataType, right: DataType): DataType {
+    if (left.baseType === BaseType.DOUBLE || right.baseType === BaseType.DOUBLE) return BuiltinTypes.DOUBLE;
+    if (left.baseType === BaseType.FLOAT || right.baseType === BaseType.FLOAT) return BuiltinTypes.FLOAT;
+    if (left.baseType === BaseType.LONG || right.baseType === BaseType.LONG) return BuiltinTypes.LONG;
+    return BuiltinTypes.INT;
+  }
+
   checkCompatible(left: DataType, right: DataType, operator: string): TypeCheckResult {
-    // Assignment and most binary operations require compatible types
+    // Assignment
     if (operator === '=') {
       if (isSameType(left, right)) {
         return { type: left, isError: false };
       }
       
+      // Allow implicit conversions between numeric types
+      if (this.isNumeric(left) && this.isNumeric(right)) {
+        return { type: left, isError: false };
+      }
+
       // Allow assignment of 0 to any pointer (null pointer)
       if (left.isPointer && right.baseType === BaseType.INT && !right.isPointer) {
         return { type: left, isError: false };
@@ -36,12 +56,13 @@ export class TypeChecker {
 
     // Arithmetic operations: both operands must be numeric
     if (['+', '-', '*', '/', '%'].includes(operator)) {
-      if (isSameType(left, BuiltinTypes.INT) && isSameType(right, BuiltinTypes.INT)) {
-        return { type: BuiltinTypes.INT, isError: false };
+      if (this.isNumeric(left) && this.isNumeric(right)) {
+        // Result is the promoted type
+        return { type: this.getPromotedType(left, right), isError: false };
       }
       
       // Basic pointer arithmetic: ptr + int, ptr - int
-      if (left.isPointer && isSameType(right, BuiltinTypes.INT) && (operator === '+' || operator === '-')) {
+      if (left.isPointer && this.isNumeric(right) && !this.isFloatingPoint(right) && (operator === '+' || operator === '-')) {
         return { type: left, isError: false };
       }
 
@@ -54,8 +75,12 @@ export class TypeChecker {
 
     // Comparison operations
     if (['==', '!=', '<', '>', '<=', '>='].includes(operator)) {
-      if (isSameType(left, right) && left.baseType !== BaseType.VOID) {
+      if (this.isNumeric(left) && this.isNumeric(right)) {
         return { type: BuiltinTypes.INT, isError: false }; // Comparisons return int (0 or 1)
+      }
+      
+      if (isSameType(left, right) && left.baseType !== BaseType.VOID) {
+        return { type: BuiltinTypes.INT, isError: false };
       }
       
       // Allow comparison of pointers with 0

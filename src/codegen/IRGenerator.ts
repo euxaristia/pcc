@@ -1,10 +1,12 @@
 import {
   ProgramNode, FunctionDeclarationNode, DeclarationNode, AssignmentNode,
-  IfStatementNode, WhileStatementNode, ForStatementNode, ReturnStatementNode,
+  IfStatementNode, WhileStatementNode, ForStatementNode, DoWhileStatementNode,
+  GotoStatementNode, LabelStatementNode, ReturnStatementNode,
   ExpressionStatementNode, BinaryExpressionNode, UnaryExpressionNode,
-  FunctionCallNode, IdentifierNode, NumberLiteralNode, StringLiteralNode,
-  CharacterLiteralNode, NodeType, ExpressionNode, StatementNode, TypeSpecifierNode,
-  SizeofExpressionNode, CastExpressionNode, MemberAccessNode, ArrayAccessNode
+  TernaryExpressionNode, FunctionCallNode, IdentifierNode, NumberLiteralNode,
+  StringLiteralNode, CharacterLiteralNode, NodeType, ExpressionNode, StatementNode,
+  TypeSpecifierNode, SizeofExpressionNode, CastExpressionNode, MemberAccessNode,
+  ArrayAccessNode, EnumDeclarationNode, UnionDeclarationNode
 } from '../parser/Parser';
 import { DataType } from '../semantic/SymbolTable';
 import {
@@ -39,11 +41,14 @@ export class IRGenerator {
   generate(program: ProgramNode): IRModule {
     this.module = { functions: [], globals: [] };
     
-    // First pass: process global variable declarations
+    // First pass: process global variable declarations and enums
     for (const decl of program.declarations) {
       if (decl.type === NodeType.DECLARATION) {
         this.processGlobalDeclaration(decl as DeclarationNode);
+      } else if (decl.type === NodeType.ENUM_DECLARATION) {
+        this.processEnumDeclaration(decl as EnumDeclarationNode);
       }
+      // Unions are handled like structs for now
     }
 
     // Second pass: process function declarations
@@ -62,7 +67,8 @@ export class IRGenerator {
     let initializer: IRConstant | undefined;
     if (decl.initializer && decl.initializer.type === NodeType.NUMBER_LITERAL) {
       const literal = decl.initializer as NumberLiteralNode;
-      initializer = createConstant(parseInt(literal.value), irType);
+      const constant = this.processNumberLiteral(literal);
+      initializer = constant;
     }
 
     this.module.globals.push({
@@ -70,6 +76,24 @@ export class IRGenerator {
       type: irType,
       initializer,
     });
+  }
+
+  private processEnumDeclaration(enumDecl: EnumDeclarationNode): void {
+    // For now, we'll just treat enum values as integer constants
+    // In a full implementation, we'd store them in a symbol table
+    let nextValue = 0;
+    for (const enumValue of enumDecl.values) {
+      if (enumValue.value) {
+        // If there's an explicit value, parse it
+        const value = this.processExpression(enumValue.value);
+        if ('value' in value) {
+          nextValue = (value as IRConstant).value + 1;
+        }
+      } else {
+        // Auto-increment
+        nextValue++;
+      }
+    }
   }
 
   private processFunctionDeclaration(funcDecl: FunctionDeclarationNode): void {
@@ -144,6 +168,18 @@ export class IRGenerator {
 
       case NodeType.FOR_STATEMENT:
         this.processForStatement(stmt as ForStatementNode);
+        break;
+
+      case NodeType.DO_WHILE_STATEMENT:
+        this.processDoWhileStatement(stmt as DoWhileStatementNode);
+        break;
+
+      case NodeType.GOTO_STATEMENT:
+        this.processGotoStatement(stmt as GotoStatementNode);
+        break;
+
+      case NodeType.LABEL_STATEMENT:
+        this.processLabelStatement(stmt as LabelStatementNode);
         break;
 
       case NodeType.RETURN_STATEMENT:
@@ -415,6 +451,63 @@ export class IRGenerator {
     this.context.currentBlock.instructions.push(retInstr);
   }
 
+  private processDoWhileStatement(doWhileStmt: DoWhileStatementNode): void {
+    if (!this.context.currentFunction || !this.context.currentBlock) {
+      throw new Error('Do-while statement outside function');
+    }
+
+    // Create blocks for the loop body, condition, and after
+    const bodyBlock = this.createNewBlock('do_while_body');
+    const condBlock = this.createNewBlock('do_while_cond');
+    const afterBlock = this.createNewBlock('do_while_after');
+
+    // Jump to body first
+    this.context.currentBlock.instructions.push({ target: bodyBlock.label } as IRJump);
+
+    // Process body
+    this.context.currentFunction.body.push(bodyBlock);
+    this.context.currentBlock = bodyBlock;
+    this.processStatement(doWhileStmt.body as StatementNode);
+    bodyBlock.instructions.push({ target: condBlock.label } as IRJump);
+
+    // Process condition
+    this.context.currentFunction.body.push(condBlock);
+    this.context.currentBlock = condBlock;
+    const condition = this.processExpression(doWhileStmt.condition);
+    const jumpIfInstr: IRJumpIf = {
+      condition: condition as IRValue,
+      trueTarget: bodyBlock.label,
+      falseTarget: afterBlock.label,
+    };
+    condBlock.instructions.push(jumpIfInstr);
+
+    // Set current block to after block
+    this.context.currentFunction.body.push(afterBlock);
+    this.context.currentBlock = afterBlock;
+  }
+
+  private processGotoStatement(gotoStmt: GotoStatementNode): void {
+    if (!this.context.currentBlock) {
+      throw new Error('Goto statement outside block');
+    }
+
+    const jumpInstr: IRJump = {
+      target: gotoStmt.label,
+    };
+    this.context.currentBlock.instructions.push(jumpInstr);
+  }
+
+  private processLabelStatement(labelStmt: LabelStatementNode): void {
+    if (!this.context.currentFunction) {
+      throw new Error('Label statement outside function');
+    }
+
+    // Create a new block for the label
+    const labelBlock = this.createNewBlock(labelStmt.name);
+    this.context.currentFunction.body.push(labelBlock);
+    this.context.currentBlock = labelBlock;
+  }
+
   private processExpressionStatement(exprStmt: ExpressionStatementNode): void {
     this.processExpression(exprStmt.expression);
   }
@@ -438,6 +531,9 @@ export class IRGenerator {
       case NodeType.UNARY_EXPRESSION:
         return this.processUnaryExpression(expr as UnaryExpressionNode);
 
+      case NodeType.TERNARY_EXPRESSION:
+        return this.processTernaryExpression(expr as TernaryExpressionNode);
+
       case NodeType.FUNCTION_CALL:
         return this.processFunctionCall(expr as FunctionCallNode);
 
@@ -449,6 +545,9 @@ export class IRGenerator {
 
       case NodeType.CHARACTER_LITERAL:
         return this.processCharacterLiteral(expr as CharacterLiteralNode);
+
+      case NodeType.STRING_LITERAL:
+        return this.processStringLiteral(expr as StringLiteralNode);
 
       case NodeType.SIZEOF_EXPRESSION:
         return this.processSizeofExpression(expr as SizeofExpressionNode);
@@ -463,7 +562,8 @@ export class IRGenerator {
         return this.processArrayAccess(expr as ArrayAccessNode);
 
       default:
-        throw new Error(`Unsupported expression type: ${expr.type}`);
+        const never: never = expr;
+        throw new Error(`Unsupported expression type: ${never}`);
     }
   }
 
@@ -482,6 +582,11 @@ export class IRGenerator {
       case '*': opcode = IROpCode.MUL; break;
       case '/': opcode = IROpCode.DIV; break;
       case '%': opcode = IROpCode.MOD; break;
+      case '<<': opcode = IROpCode.SHL; break;
+      case '>>': opcode = IROpCode.SHR; break;
+      case '&': opcode = IROpCode.BAND; break;
+      case '|': opcode = IROpCode.BOR; break;
+      case '^': opcode = IROpCode.BXOR; break;
       case '==': opcode = IROpCode.EQ; break;
       case '!=': opcode = IROpCode.NE; break;
       case '<': opcode = IROpCode.LT; break;
@@ -545,6 +650,7 @@ export class IRGenerator {
     switch (unary.operator) {
       case '-': opcode = IROpCode.SUB; break;
       case '!': opcode = IROpCode.NOT; break;
+      case '~': opcode = IROpCode.BNOT; break;
       case '++_post':
       case '--_post':
         // Handle post-increment/decrement: load value, compute new value, store back
@@ -593,6 +699,69 @@ export class IRGenerator {
       this.context.currentBlock.instructions.push(result);
       return result as IRValue;
     }
+  }
+
+  private processTernaryExpression(ternary: TernaryExpressionNode): IRValue | IRConstant {
+    if (!this.context.currentBlock) {
+      throw new Error('Ternary expression outside block');
+    }
+
+    let condition = this.processExpression(ternary.condition);
+    
+    // Ensure condition is an IRValue (not a constant)
+    if ('value' in condition) {
+      const constVal = condition as IRConstant;
+      const constValue = createInstruction(
+        this.genId(),
+        IROpCode.ADD, // Just copy the constant
+        constVal.type,
+        [constVal]
+      );
+      if (this.context.currentBlock) {
+        this.context.currentBlock.instructions.push(constValue);
+      }
+      condition = constValue as IRValue;
+    }
+    
+    // Create new blocks for the branches
+    const trueBlock = this.createNewBlock('ternary_true');
+    const falseBlock = this.createNewBlock('ternary_false');
+    const endBlock = this.createNewBlock('ternary_end');
+    
+    // Jump to the appropriate block based on condition
+    const jumpIfInstr: IRJumpIf = {
+      condition,
+      trueTarget: trueBlock.label,
+      falseTarget: falseBlock.label,
+    };
+    this.context.currentBlock.instructions.push(jumpIfInstr);
+    
+    // Add blocks to function
+    if (this.context.currentFunction) {
+      this.context.currentFunction.body.push(trueBlock);
+      this.context.currentFunction.body.push(falseBlock);
+      this.context.currentFunction.body.push(endBlock);
+    }
+    
+    // Process true branch
+    this.context.currentBlock = trueBlock;
+    const trueValue = this.processExpression(ternary.thenBranch);
+    const trueJump: IRJump = { target: endBlock.label };
+    trueBlock.instructions.push(trueJump);
+    
+    // Process false branch
+    this.context.currentBlock = falseBlock;
+    const falseValue = this.processExpression(ternary.elseBranch);
+    const falseJump: IRJump = { target: endBlock.label };
+    falseBlock.instructions.push(falseJump);
+    
+    // Set current block to end block and create phi
+    this.context.currentBlock = endBlock;
+    
+    // For simplicity, we'll just return a new value
+    // A proper implementation would need phi nodes to merge the two branches
+    const resultType = 'value' in trueValue ? (trueValue as IRConstant).type : (trueValue as IRValue).type;
+    return createValue(this.genId(), resultType);
   }
 
   private processFunctionCall(call: FunctionCallNode): IRValue {
@@ -655,6 +824,16 @@ export class IRGenerator {
   }
 
   private processNumberLiteral(literal: NumberLiteralNode): IRConstant {
+    const valueStr = literal.value.toLowerCase();
+    if (valueStr.endsWith('f')) {
+      return createConstant(parseFloat(literal.value), IRType.F32);
+    }
+    if (valueStr.includes('.') || valueStr.includes('e')) {
+      return createConstant(parseFloat(literal.value), IRType.F64);
+    }
+    if (valueStr.endsWith('l')) {
+      return createConstant(parseInt(literal.value), IRType.I64);
+    }
     const value = parseInt(literal.value);
     return createConstant(value, IRType.I32);
   }
@@ -662,6 +841,25 @@ export class IRGenerator {
   private processCharacterLiteral(literal: CharacterLiteralNode): IRConstant {
     const value = literal.value.charCodeAt(1); // Skip the opening quote
     return createConstant(value, IRType.I8);
+  }
+
+  private processStringLiteral(literal: StringLiteralNode): IRValue {
+    if (!this.context.currentBlock) {
+      throw new Error('String literal outside block');
+    }
+
+    // For now, we'll create a global constant for the string
+    // In a full implementation, we'd allocate it in .rodata
+    const stringId = this.genId();
+    const stringGlobal = {
+      name: `.str${stringId}`,
+      type: IRType.PTR,
+      initializer: createConstant(0, IRType.I32), // Placeholder
+    };
+    this.module.globals.push(stringGlobal);
+
+    // Return a pointer to the string
+    return createValue(stringGlobal.name, IRType.PTR);
   }
 
   private dataTypeToIRType(dataType: DataType): IRType {
@@ -672,6 +870,9 @@ export class IRGenerator {
     switch (dataType.baseType) {
       case 'int': return IRType.I32;
       case 'char': return IRType.I8;
+      case 'long': return IRType.I64;
+      case 'float': return IRType.F32;
+      case 'double': return IRType.F64;
       case 'void': return IRType.VOID;
       default: return IRType.I32;
     }
@@ -703,7 +904,24 @@ export class IRGenerator {
   }
 
   private getOperationResultType(opcode: IROpCode, left: IRValue | IRConstant, right: IRValue | IRConstant): IRType {
-    // For now, assume all operations return I32
+    const leftType = (left as IRValue).type || (left as IRConstant).type;
+    const rightType = (right as IRValue).type || (right as IRConstant).type;
+
+    if (leftType === IRType.F64 || rightType === IRType.F64) {
+      return IRType.F64;
+    }
+    if (leftType === IRType.F32 || rightType === IRType.F32) {
+      return IRType.F32;
+    }
+    if (leftType === IRType.I64 || rightType === IRType.I64) {
+      return IRType.I64;
+    }
+    
+    // Comparison operators always return I32 (boolean)
+    if ([IROpCode.EQ, IROpCode.NE, IROpCode.LT, IROpCode.LE, IROpCode.GT, IROpCode.GE].includes(opcode)) {
+      return IRType.I32;
+    }
+
     return IRType.I32;
   }
 

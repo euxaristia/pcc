@@ -1,6 +1,9 @@
 export enum BaseType {
   INT = 'int',
   CHAR = 'char',
+  LONG = 'long',
+  FLOAT = 'float',
+  DOUBLE = 'double',
   VOID = 'void',
   STRUCT = 'struct',
 }
@@ -15,6 +18,9 @@ export interface DataType {
 export const BuiltinTypes = {
   INT: { baseType: BaseType.INT, isPointer: false, pointerCount: 0 } as DataType,
   CHAR: { baseType: BaseType.CHAR, isPointer: false, pointerCount: 0 } as DataType,
+  LONG: { baseType: BaseType.LONG, isPointer: false, pointerCount: 0 } as DataType,
+  FLOAT: { baseType: BaseType.FLOAT, isPointer: false, pointerCount: 0 } as DataType,
+  DOUBLE: { baseType: BaseType.DOUBLE, isPointer: false, pointerCount: 0 } as DataType,
   VOID: { baseType: BaseType.VOID, isPointer: false, pointerCount: 0 } as DataType,
 };
 

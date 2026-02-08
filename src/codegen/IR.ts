@@ -6,6 +6,14 @@ export enum IROpCode {
   DIV = 'div',
   MOD = 'mod',
   
+  // Bitwise Operations
+  SHL = 'shl',
+  SHR = 'shr',
+  BAND = 'band',
+  BOR = 'bor',
+  BXOR = 'bxor',
+  BNOT = 'bnot',
+  
   // Comparison Operations
   EQ = 'eq',
   NE = 'ne',
@@ -41,6 +49,8 @@ export enum IRType {
   I8 = 'i8',
   I32 = 'i32',
   I64 = 'i64',
+  F32 = 'f32',
+  F64 = 'f64',
   VOID = 'void',
   PTR = 'ptr',
 }
@@ -119,6 +129,8 @@ export function getIRTypeSize(type: IRType): number {
     case IRType.I8: return 1;
     case IRType.I32: return 4;
     case IRType.I64: return 8;
+    case IRType.F32: return 4;
+    case IRType.F64: return 8;
     case IRType.PTR: return 8;
     case IRType.VOID: return 0;
     default: return 4;
@@ -131,6 +143,10 @@ export function isPointerType(type: IRType): boolean {
 
 export function isIntegerType(type: IRType): boolean {
   return type === IRType.I8 || type === IRType.I32 || type === IRType.I64;
+}
+
+export function isFloatingPointType(type: IRType): boolean {
+  return type === IRType.F32 || type === IRType.F64;
 }
 
 // Value creation utilities

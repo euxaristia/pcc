@@ -24,6 +24,29 @@ export enum TokenType {
   DEFAULT = 'default',
   BREAK = 'break',
   CONTINUE = 'continue',
+  ENUM = 'enum',
+  UNION = 'union',
+  EXTERN = 'extern',
+  CONST = 'const',
+  INLINE = 'inline',
+  DO = 'do',
+  GOTO = 'goto',
+  REGISTER = 'register',
+  AUTO = 'auto',
+  BOOL = '_Bool',
+  FLOAT = 'float',
+  DOUBLE = 'double',
+  RESTRICT = 'restrict',
+  NORETURN = '_Noreturn',
+  ALIGNAS = '_Alignas',
+  ALIGNOF = '_Alignof',
+  STATIC_ASSERT = '_Static_assert',
+  THREAD_LOCAL = '_Thread_local',
+  ATTRIBUTE = '__attribute__',
+  EXTENSION = '__extension__',
+  TYPEOF = '__typeof__',
+  UNDERSCORE_INLINE = '__inline__',
+  UNDERSCORE_RESTRICT = '__restrict__',
   
   // Identifiers and literals
   IDENTIFIER = 'IDENTIFIER',
@@ -54,6 +77,24 @@ export enum TokenType {
   RIGHT_SHIFT = '>>',
   INCREMENT = '++',
   DECREMENT = '--',
+  
+  // Compound assignment operators
+  PLUS_ASSIGN = '+=',
+  MINUS_ASSIGN = '-=',
+  MULTIPLY_ASSIGN = '*=',
+  DIVIDE_ASSIGN = '/=',
+  MODULO_ASSIGN = '%=',
+  AND_ASSIGN = '&=',
+  OR_ASSIGN = '|=',
+  XOR_ASSIGN = '^=',
+  LEFT_SHIFT_ASSIGN = '<<=',
+  RIGHT_SHIFT_ASSIGN = '>>=',
+  
+  // Arrow operator
+  ARROW = '->',
+  
+  // Ellipsis
+  ELLIPSIS = '...',
   
   // Delimiters
   SEMICOLON = ';',
@@ -125,6 +166,29 @@ export class Lexer {
     ['default', TokenType.DEFAULT],
     ['break', TokenType.BREAK],
     ['continue', TokenType.CONTINUE],
+    ['enum', TokenType.ENUM],
+    ['union', TokenType.UNION],
+    ['extern', TokenType.EXTERN],
+    ['const', TokenType.CONST],
+    ['inline', TokenType.INLINE],
+    ['__inline__', TokenType.UNDERSCORE_INLINE],
+    ['do', TokenType.DO],
+    ['goto', TokenType.GOTO],
+    ['register', TokenType.REGISTER],
+    ['auto', TokenType.AUTO],
+    ['_Bool', TokenType.BOOL],
+    ['float', TokenType.FLOAT],
+    ['double', TokenType.DOUBLE],
+    ['restrict', TokenType.RESTRICT],
+    ['__restrict__', TokenType.UNDERSCORE_RESTRICT],
+    ['_Noreturn', TokenType.NORETURN],
+    ['_Alignas', TokenType.ALIGNAS],
+    ['_Alignof', TokenType.ALIGNOF],
+    ['_Static_assert', TokenType.STATIC_ASSERT],
+    ['_Thread_local', TokenType.THREAD_LOCAL],
+    ['__attribute__', TokenType.ATTRIBUTE],
+    ['__extension__', TokenType.EXTENSION],
+    ['__typeof__', TokenType.TYPEOF],
   ]);
 
   constructor(input: string) {
@@ -222,10 +286,31 @@ export class Lexer {
       while (/\d/.test(this.peek())) {
         this.advance();
       }
+      
+      // Check for decimal point
+      if (this.peek() === '.') {
+        this.advance();
+        while (/\d/.test(this.peek())) {
+          this.advance();
+        }
+      }
+      
+      // Check for scientific notation
+      if (this.peek() === 'e' || this.peek() === 'E') {
+        this.advance();
+        if (this.peek() === '+' || this.peek() === '-') {
+          this.advance();
+        }
+        while (/\d/.test(this.peek())) {
+          this.advance();
+        }
+      }
     }
     
-    // Handle suffixes (U, L, LL, UL, ULL, etc.)
-    if (this.peek() === 'u' || this.peek() === 'U') {
+    // Handle suffixes (U, L, LL, f, etc.)
+    if (this.peek() === 'f' || this.peek() === 'F') {
+      this.advance();
+    } else if (this.peek() === 'u' || this.peek() === 'U') {
       this.advance();
       if (this.peek() === 'l' || this.peek() === 'L') {
         this.advance();
@@ -317,7 +402,45 @@ export class Lexer {
         (char === '<' && next === '<') ||
         (char === '>' && next === '>') ||
         (char === '+' && next === '+') ||
-        (char === '-' && next === '-')) {
+        (char === '-' && next === '-') ||
+        (char === '-' && next === '>') ||
+        (char === '+' && next === '=') ||
+        (char === '-' && next === '=') ||
+        (char === '*' && next === '=') ||
+        (char === '/' && next === '=') ||
+        (char === '%' && next === '=') ||
+        (char === '&' && next === '=') ||
+        (char === '|' && next === '=') ||
+        (char === '^' && next === '=')) {
+      this.advance();
+      const value = this.input.substring(start, this.position);
+      return {
+        type: this.getOperatorTokenType(value),
+        value,
+        line: startLine,
+        column: startColumn,
+      };
+    }
+    
+    // Three-character operators (<<=, >>=, and ellipsis)
+    if ((char === '<' && next === '<' && this.peek(2) === '=') ||
+        (char === '>' && next === '>' && this.peek(2) === '=')) {
+      this.advance();
+      this.advance();
+      this.advance();
+      const value = this.input.substring(start, this.position);
+      return {
+        type: this.getOperatorTokenType(value),
+        value,
+        line: startLine,
+        column: startColumn,
+      };
+    }
+    
+    // Ellipsis (...)
+    if (char === '.' && next === '.' && this.peek(2) === '.') {
+      this.advance();
+      this.advance();
       this.advance();
       const value = this.input.substring(start, this.position);
       return {
@@ -357,10 +480,23 @@ export class Lexer {
       case '&': return TokenType.BITWISE_AND;
       case '|': return TokenType.BITWISE_OR;
       case '^': return TokenType.BITWISE_XOR;
+      case '~': return TokenType.TILDE;
       case '<<': return TokenType.LEFT_SHIFT;
       case '>>': return TokenType.RIGHT_SHIFT;
       case '++': return TokenType.INCREMENT;
       case '--': return TokenType.DECREMENT;
+      case '+=': return TokenType.PLUS_ASSIGN;
+      case '-=': return TokenType.MINUS_ASSIGN;
+      case '*=': return TokenType.MULTIPLY_ASSIGN;
+      case '/=': return TokenType.DIVIDE_ASSIGN;
+      case '%=': return TokenType.MODULO_ASSIGN;
+      case '&=': return TokenType.AND_ASSIGN;
+      case '|=': return TokenType.OR_ASSIGN;
+      case '^=': return TokenType.XOR_ASSIGN;
+      case '<<=': return TokenType.LEFT_SHIFT_ASSIGN;
+      case '>>=': return TokenType.RIGHT_SHIFT_ASSIGN;
+      case '->': return TokenType.ARROW;
+      case '...': return TokenType.ELLIPSIS;
       case ';': return TokenType.SEMICOLON;
       case ',': return TokenType.COMMA;
       case '.': return TokenType.DOT;
@@ -381,10 +517,23 @@ export class Lexer {
     // Skip whitespace first
     this.skipWhitespace();
     
-    // Check for preprocessor directives at the beginning of line (no leading whitespace)
-    if (this.column === 1 && this.peek() === '#') {
-      this.skipPreprocessorDirective();
-      return this.nextToken();
+    // Handle preprocessor directives (including line markers from preprocessed code)
+    if (this.peek() === '#') {
+      // Check if this is a line marker (e.g., # 123 "file.c")
+      const afterHash = this.position + 1;
+      let i = afterHash;
+      while (i < this.input.length && /\s/.test(this.input[i])) {
+        i++;
+      }
+      if (i < this.input.length && /\d/.test(this.input[i])) {
+        // This looks like a line marker, skip it
+        this.skipPreprocessorDirective();
+        return this.nextToken();
+      } else if (this.column === 1) {
+        // Regular preprocessor directive at start of line
+        this.skipPreprocessorDirective();
+        return this.nextToken();
+      }
     }
     
     if (this.position >= this.input.length) {
@@ -427,7 +576,7 @@ export class Lexer {
       return this.readString(char);
     }
     
-    if (/[+\-*/%=!<>&|^?:;,.()\[\]{}#]/.test(char)) {
+    if (/[+\-*/%=!<>&|^?:;,.()\[\]{}#~]/.test(char)) {
       return this.readOperator();
     }
     

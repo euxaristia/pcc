@@ -365,6 +365,16 @@ export class SemanticAnalyzer {
         return this.analyzeIdentifier(node as IdentifierNode);
 
       case NodeType.NUMBER_LITERAL:
+        const literal = (node as NumberLiteralNode).value;
+        if (literal.toLowerCase().endsWith('f')) {
+          return { type: BuiltinTypes.FLOAT, isError: false };
+        }
+        if (literal.includes('.') || literal.toLowerCase().includes('e')) {
+          return { type: BuiltinTypes.DOUBLE, isError: false };
+        }
+        if (literal.toLowerCase().endsWith('l')) {
+          return { type: BuiltinTypes.LONG, isError: false };
+        }
         return { type: BuiltinTypes.INT, isError: false };
 
       case NodeType.STRING_LITERAL:
@@ -554,6 +564,9 @@ export class SemanticAnalyzer {
       switch (typeNode.typeName) {
         case 'int': baseType = BaseType.INT; break;
         case 'char': baseType = BaseType.CHAR; break;
+        case 'long': baseType = BaseType.LONG; break;
+        case 'float': baseType = BaseType.FLOAT; break;
+        case 'double': baseType = BaseType.DOUBLE; break;
         case 'void': baseType = BaseType.VOID; break;
         default: baseType = BaseType.INT; // Fallback
       }
