@@ -104,6 +104,7 @@ export class RegisterAllocator {
         if (!this.allocatedRegisters.has(reg)) {
           this.allocatedRegisters.add(reg);
           this.variableRegisters.set(valueId, reg);
+          // console.error(`ALLOC: ${valueId} -> ${reg.name}`);
           return reg;
         }
       }
@@ -113,6 +114,7 @@ export class RegisterAllocator {
         if (!this.allocatedRegisters.has(reg)) {
           this.allocatedRegisters.add(reg);
           this.variableRegisters.set(valueId, reg);
+          // console.error(`ALLOC: ${valueId} -> ${reg.name}`);
           return reg;
         }
       }
@@ -122,17 +124,20 @@ export class RegisterAllocator {
         if (!this.allocatedRegisters.has(reg)) {
           this.allocatedRegisters.add(reg);
           this.variableRegisters.set(valueId, reg);
+          // console.error(`ALLOC: ${valueId} -> ${reg.name}`);
           return reg;
         }
       }
     }
     
+    console.error(`ALLOC FAILED: No available registers for ${valueId}. Current map size: ${this.variableRegisters.size}`);
     return null; // No registers available
   }
 
   freeRegister(valueId: string): void {
     const reg = this.variableRegisters.get(valueId);
     if (reg) {
+      // console.error(`FREE: ${valueId} from ${reg.name}`);
       this.allocatedRegisters.delete(reg);
       this.variableRegisters.delete(valueId);
     }
@@ -259,6 +264,30 @@ export class InstructionSelector {
       case IROpCode.OR:
         assembly.push(...this.selectLogicalInstruction('or', instruction, getValue));
         break;
+
+      case IROpCode.SHL:
+        assembly.push(...this.selectBinaryInstruction('shl', instruction, getValue));
+        break;
+
+      case IROpCode.SHR:
+        assembly.push(...this.selectBinaryInstruction('shr', instruction, getValue));
+        break;
+
+      case IROpCode.BAND:
+        assembly.push(...this.selectBinaryInstruction('and', instruction, getValue));
+        break;
+
+      case IROpCode.BOR:
+        assembly.push(...this.selectBinaryInstruction('or', instruction, getValue));
+        break;
+
+      case IROpCode.BXOR:
+        assembly.push(...this.selectBinaryInstruction('xor', instruction, getValue));
+        break;
+
+      case IROpCode.BNOT:
+        assembly.push(...this.selectUnaryInstruction('not', instruction, getValue));
+        break;
         
       case IROpCode.NOT:
         assembly.push(...this.selectNotInstruction(instruction, getValue));
@@ -270,6 +299,10 @@ export class InstructionSelector {
         
       case IROpCode.STORE:
         assembly.push(...this.selectStoreInstruction(instruction, getValue));
+        break;
+        
+      case IROpCode.ASM:
+        assembly.push(instruction.metadata?.assembly || "");
         break;
         
       case IROpCode.ALLOCA:
@@ -311,9 +344,37 @@ export class InstructionSelector {
     } else {
       // Move left operand to result register
       assembly.push(`mov ${leftStr}, ${resultReg.name}`);
-      // Perform operation
-      assembly.push(`${opMnemonic} ${rightStr}, ${resultReg.name}`);
+      
+      // Special case for shifts with non-constant amount
+      if ((mnemonic === 'shl' || mnemonic === 'shr') && !('value' in right)) {
+        // x86-64 requires shift amount in CL if not constant
+        assembly.push(`mov ${rightStr}, cl`);
+        assembly.push(`${mnemonic} ${resultReg.name}, cl`);
+      } else {
+        // Perform operation
+        assembly.push(`${opMnemonic} ${rightStr}, ${resultReg.name}`);
+      }
     }
+    
+    return assembly;
+  }
+
+  private selectUnaryInstruction(
+    mnemonic: string,
+    instruction: IRInstruction,
+    getValue: (id: string) => string
+  ): string[] {
+    const operand = instruction.operands[0];
+    const operandStr = this.getOperandString(operand, getValue);
+    
+    const resultReg = this.registerAllocator.allocateRegister(instruction.id, instruction.type);
+    if (!resultReg) {
+      throw new Error('No available registers for unary operation');
+    }
+    
+    const assembly: string[] = [];
+    assembly.push(`mov ${operandStr}, ${resultReg.name}`);
+    assembly.push(`${mnemonic} ${resultReg.name}`);
     
     return assembly;
   }

@@ -234,7 +234,32 @@ export class Lexer {
   }
 
   private skipPreprocessorDirective(): void {
+    // Check if this is a line marker: # 123 "file.c"
+    // '#' is already peeked but not advanced in nextToken
+    this.advance(); // Skip '#'
+    
+    // Skip optional spaces
+    while (this.peek() === ' ' || this.peek() === '\t') {
+      this.advance();
+    }
+    
+    // If it's a digit, it's a line marker
+    if (/\d/.test(this.peek())) {
+      let lineStr = '';
+      while (/\d/.test(this.peek())) {
+        lineStr += this.advance();
+      }
+      const newLine = parseInt(lineStr, 10);
+      if (!isNaN(newLine)) {
+        this.line = newLine - 1; // -1 because the next \n will increment it
+        this.column = 1;
+      }
+    }
+
     while (this.peek() !== '\n' && this.peek() !== '\0') {
+      this.advance();
+    }
+    if (this.peek() === '\n') {
       this.advance();
     }
   }
@@ -519,21 +544,8 @@ export class Lexer {
     
     // Handle preprocessor directives (including line markers from preprocessed code)
     if (this.peek() === '#') {
-      // Check if this is a line marker (e.g., # 123 "file.c")
-      const afterHash = this.position + 1;
-      let i = afterHash;
-      while (i < this.input.length && /\s/.test(this.input[i])) {
-        i++;
-      }
-      if (i < this.input.length && /\d/.test(this.input[i])) {
-        // This looks like a line marker, skip it
-        this.skipPreprocessorDirective();
-        return this.nextToken();
-      } else if (this.column === 1) {
-        // Regular preprocessor directive at start of line
-        this.skipPreprocessorDirective();
-        return this.nextToken();
-      }
+      this.skipPreprocessorDirective();
+      return this.nextToken();
     }
     
     if (this.position >= this.input.length) {

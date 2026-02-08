@@ -4,6 +4,7 @@ aports/
 dist/
 node_modules/
 *.o
+*.i
 *.out
 pcc-dist.tar.gz
 demo.js

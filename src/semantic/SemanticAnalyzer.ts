@@ -5,7 +5,8 @@ import {
   BinaryExpressionNode, UnaryExpressionNode, FunctionCallNode,
   IdentifierNode, NumberLiteralNode, StringLiteralNode, CharacterLiteralNode,
   TypeSpecifierNode, ParameterNode, CompoundStatementNode, SizeofExpressionNode,
-  CastExpressionNode, MemberAccessNode, ArrayAccessNode, ExpressionNode, StatementNode
+  CastExpressionNode, MemberAccessNode, ArrayAccessNode, ExpressionNode, StatementNode,
+  MultiDeclarationNode
 } from '../parser/Parser';
 import { SymbolTable, Symbol, DataType, BaseType, BuiltinTypes, typeToString, isSameType } from './SymbolTable';
 import { TypeChecker } from './TypeChecker';
@@ -54,6 +55,12 @@ export class SemanticAnalyzer {
         this.analyzeFunctionDeclaration(declaration as FunctionDeclarationNode);
       } else if (declaration.type === NodeType.DECLARATION) {
         this.analyzeVariableDeclaration(declaration as DeclarationNode);
+      } else if (declaration.type === NodeType.MULTI_DECLARATION) {
+        (declaration as MultiDeclarationNode).declarations.forEach(decl => {
+          this.analyzeVariableDeclaration(decl);
+        });
+      } else if (declaration.type === NodeType.UNION_DECLARATION) {
+        // Skip for now
       } else if (declaration.type === NodeType.ATTRIBUTE_STMT) {
         // Skip attributes
       }
@@ -197,6 +204,15 @@ export class SemanticAnalyzer {
     switch (node.type) {
       case NodeType.DECLARATION:
         this.analyzeVariableDeclaration(node as DeclarationNode);
+        break;
+
+      case NodeType.MULTI_DECLARATION:
+        (node as MultiDeclarationNode).declarations.forEach(decl => {
+          this.analyzeVariableDeclaration(decl);
+        });
+        break;
+
+      case NodeType.EMPTY_STATEMENT:
         break;
 
       case NodeType.ASSIGNMENT:
@@ -370,7 +386,8 @@ export class SemanticAnalyzer {
 
       case NodeType.NUMBER_LITERAL:
         const literal = (node as NumberLiteralNode).value;
-        if (literal.toLowerCase().endsWith('f')) {
+        const isHex = literal.toLowerCase().startsWith('0x');
+        if (!isHex && literal.toLowerCase().endsWith('f')) {
           return { type: BuiltinTypes.FLOAT, isError: false };
         }
         if (literal.includes('.') || literal.toLowerCase().includes('e')) {
@@ -466,22 +483,6 @@ export class SemanticAnalyzer {
       return operandResult;
     }
 
-    // Handle different unary operators
-    if (node.operator === '!') {
-      return { type: BuiltinTypes.INT, isError: false };
-    }
-
-    if (node.operator === '-' || node.operator === '++_post' || node.operator === '--_post' || node.operator === '++' || node.operator === '--') {
-      if (isSameType(operandResult.type, BuiltinTypes.INT)) {
-        return { type: BuiltinTypes.INT, isError: false };
-      }
-      return {
-        type: BuiltinTypes.INT,
-        isError: true,
-        errorMessage: `Unary operator '${node.operator}' cannot be applied to ${typeToString(operandResult.type)}`,
-      };
-    }
-
     // Pointer operators (&, *)
     if (node.operator === '&') {
       // Address-of: creates a pointer to the operand's type
@@ -517,7 +518,7 @@ export class SemanticAnalyzer {
       };
     }
 
-    return { type: operandResult.type, isError: false };
+    return this.typeChecker.checkUnary(operandResult.type, node.operator);
   }
 
   private analyzeFunctionCall(node: FunctionCallNode): { type: DataType; isError: boolean; errorMessage?: string } {
@@ -575,6 +576,7 @@ export class SemanticAnalyzer {
         case 'float': baseType = BaseType.FLOAT; break;
         case 'double': baseType = BaseType.DOUBLE; break;
         case 'void': baseType = BaseType.VOID; break;
+        case '...': baseType = BaseType.INT; break; // Treat ellipsis as int for now
         default: baseType = BaseType.INT; // Fallback
       }
     }

@@ -191,6 +191,7 @@ export class X8664AssemblyGenerator {
           const reg = this.instructionSelector.getRegisterAllocator().allocateRegister(irInstr.id, IRType.PTR);
           if (reg) {
             assembly += `  lea ${reg.name}, [rbp - ${stackSlot.offset + 8}]\n`;
+            // The register is already stored in the map by allocateRegister
           }
           continue;
         }
@@ -198,6 +199,13 @@ export class X8664AssemblyGenerator {
         // Regular instruction
         const instrAssembly = this.instructionSelector.selectInstructions(irInstr, getValueLocation);
         assembly += instrAssembly.map(line => `  ${line}`).join('\n') + '\n';
+
+        // Free registers used by operands (since each IR value is typically used once)
+        for (const operand of irInstr.operands) {
+          if ('id' in operand && (operand.id.startsWith('t') || operand.id.startsWith('callee'))) {
+            this.instructionSelector.getRegisterAllocator().freeRegister(operand.id);
+          }
+        }
         
         // Free the register for this instruction result
         if (irInstr.opcode !== IROpCode.LOAD) {

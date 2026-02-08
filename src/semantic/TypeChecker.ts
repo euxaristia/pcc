@@ -42,6 +42,11 @@ export class TypeChecker {
         return { type: left, isError: false };
       }
 
+      // Allow void* to any pointer and vice versa
+      if ((left.isPointer && right.isPointer) && (left.baseType === BaseType.VOID || right.baseType === BaseType.VOID)) {
+        return { type: left, isError: false };
+      }
+
       // Allow assignment of 0 to any pointer (null pointer)
       if (left.isPointer && right.baseType === BaseType.INT && !right.isPointer) {
         return { type: left, isError: false };
@@ -106,6 +111,36 @@ export class TypeChecker {
     return { type: left, isError: false };
   }
 
+  checkUnary(operand: DataType, operator: string): TypeCheckResult {
+    if (['++', '--', '++_post', '--_post'].includes(operator)) {
+      if (this.isNumeric(operand) || operand.isPointer) {
+        return { type: operand, isError: false };
+      }
+      return {
+        type: operand,
+        isError: true,
+        errorMessage: `Unary operator '${operator}' cannot be applied to ${typeToString(operand)}`,
+      };
+    }
+
+    if (operator === '!') {
+      return { type: BuiltinTypes.INT, isError: false };
+    }
+
+    if (operator === '~' || operator === '-') {
+      if (this.isNumeric(operand)) {
+        return { type: operand, isError: false };
+      }
+      return {
+        type: operand,
+        isError: true,
+        errorMessage: `Unary operator '${operator}' cannot be applied to ${typeToString(operand)}`,
+      };
+    }
+
+    return { type: operand, isError: false };
+  }
+
   checkFunctionCall(name: string, argTypes: DataType[]): TypeCheckResult {
     const signature = this.functionSignatures.get(name);
     if (!signature) {
@@ -130,6 +165,11 @@ export class TypeChecker {
       if (!isSameType(expected, actual)) {
         // Allow passing 0 to pointer parameter
         if (expected.isPointer && isSameType(actual, BuiltinTypes.INT)) {
+          continue;
+        }
+
+        // Allow void* to any pointer and vice versa
+        if ((expected.isPointer && actual.isPointer) && (expected.baseType === BaseType.VOID || actual.baseType === BaseType.VOID)) {
           continue;
         }
 

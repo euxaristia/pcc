@@ -1,0 +1,2011 @@
+=== Compiling string.i ===
+
+=== Source Code ===
+# 0 "xv6/kernel/string.c"
+# 0 "<built-in>"
+# 0 "<command-line>"
+# 1 "/usr/include/stdc-predef.h" 1 3 4
+# 0 "<command-line>" 2
+# 1 "xv6/kernel/string.c"
+# 1 "xv6/include/types.h" 1
+typedef unsigned int uint;
+typedef unsigned short ushort;
+typedef unsigned char uchar;
+
+typedef unsigned int uint32;
+typedef unsigned long uint64;
+
+
+
+
+typedef unsigned int uintp;
+
+
+typedef uintp pde_t;
+# 2 "xv6/kernel/string.c" 2
+# 1 "xv6/include/x86.h" 1
+
+
+static inline uchar
+inb(ushort port)
+{
+  uchar data;
+
+  asm volatile("in %1,%0" : "=a" (data) : "d" (port));
+  return data;
+}
+
+static inline void
+insl(int port, void *addr, int cnt)
+{
+  asm volatile("cld; rep insl" :
+               "=D" (addr), "=c" (cnt) :
+               "d" (port), "0" (addr), "1" (cnt) :
+               "memory", "cc");
+}
+
+static inline void
+outb(ushort port, uchar data)
+{
+  asm volatile("out %0,%1" : : "a" (data), "d" (port));
+}
+
+static inline void
+outw(ushort port, ushort data)
+{
+  asm volatile("out %0,%1" : : "a" (data), "d" (port));
+}
+
+static inline void
+outsl(int port, const void *addr, int cnt)
+{
+  asm volatile("cld; rep outsl" :
+               "=S" (addr), "=c" (cnt) :
+               "d" (port), "0" (addr), "1" (cnt) :
+               "cc");
+}
+
+static inline void
+stosb(void *addr, int data, int cnt)
+{
+  asm volatile("cld; rep stosb" :
+               "=D" (addr), "=c" (cnt) :
+               "0" (addr), "1" (cnt), "a" (data) :
+               "memory", "cc");
+}
+
+static inline void
+stosl(void *addr, int data, int cnt)
+{
+  asm volatile("cld; rep stosl" :
+               "=D" (addr), "=c" (cnt) :
+               "0" (addr), "1" (cnt), "a" (data) :
+               "memory", "cc");
+}
+
+struct segdesc;
+
+static inline void
+lgdt(struct segdesc *p, int size)
+{
+  volatile ushort pd[5];
+
+  pd[0] = size-1;
+  pd[1] = (uintp)p;
+  pd[2] = (uintp)p >> 16;
+
+
+
+
+  asm volatile("lgdt (%0)" : : "r" (pd));
+}
+
+struct gatedesc;
+
+static inline void
+lidt(struct gatedesc *p, int size)
+{
+  volatile ushort pd[5];
+
+  pd[0] = size-1;
+  pd[1] = (uintp)p;
+  pd[2] = (uintp)p >> 16;
+
+
+
+
+  asm volatile("lidt (%0)" : : "r" (pd));
+}
+
+static inline void
+ltr(ushort sel)
+{
+  asm volatile("ltr %0" : : "r" (sel));
+}
+
+static inline uintp
+readeflags(void)
+{
+  uintp eflags;
+  asm volatile("pushf; pop %0" : "=r" (eflags));
+  return eflags;
+}
+
+static inline void
+loadgs(ushort v)
+{
+  asm volatile("movw %0, %%gs" : : "r" (v));
+}
+
+static inline void
+cli(void)
+{
+  asm volatile("cli");
+}
+
+static inline void
+sti(void)
+{
+  asm volatile("sti");
+}
+
+static inline void
+hlt(void)
+{
+  asm volatile("hlt");
+}
+
+static inline uint
+xchg(volatile uint *addr, uintp newval)
+{
+  uint result;
+
+
+  asm volatile("lock; xchgl %0, %1" :
+               "+m" (*addr), "=a" (result) :
+               "1" ((uint)newval) :
+               "cc");
+  return result;
+}
+
+static inline uintp
+rcr2(void)
+{
+  uintp val;
+  asm volatile("mov %%cr2,%0" : "=r" (val));
+  return val;
+}
+
+static inline void
+lcr3(uintp val)
+{
+  asm volatile("mov %0,%%cr3" : : "r" (val));
+}
+# 192 "xv6/include/x86.h"
+struct trapframe {
+
+  uint edi;
+  uint esi;
+  uint ebp;
+  uint oesp;
+  uint ebx;
+  uint edx;
+  uint ecx;
+  uint eax;
+
+
+  ushort gs;
+  ushort padding1;
+  ushort fs;
+  ushort padding2;
+  ushort es;
+  ushort padding3;
+  ushort ds;
+  ushort padding4;
+  uint trapno;
+
+
+  uint err;
+  uint eip;
+  ushort cs;
+  ushort padding5;
+  uint eflags;
+
+
+  uint esp;
+  ushort ss;
+  ushort padding6;
+};
+# 3 "xv6/kernel/string.c" 2
+
+void*
+memset(void *dst, int c, uint n)
+{
+  if ((uintp)dst%4 == 0 && n%4 == 0){
+    c &= 0xFF;
+    stosl(dst, (c<<24)|(c<<16)|(c<<8)|c, n/4);
+  } else
+    stosb(dst, c, n);
+  return dst;
+}
+
+int
+memcmp(const void *v1, const void *v2, uint n)
+{
+  const uchar *s1, *s2;
+
+  s1 = v1;
+  s2 = v2;
+  while(n-- > 0){
+    if(*s1 != *s2)
+      return *s1 - *s2;
+    s1++, s2++;
+  }
+
+  return 0;
+}
+
+void*
+memmove(void *dst, const void *src, uint n)
+{
+  const char *s;
+  char *d;
+
+  s = src;
+  d = dst;
+  if(s < d && s + n > d){
+    s += n;
+    d += n;
+    while(n-- > 0)
+      *--d = *--s;
+  } else
+    while(n-- > 0)
+      *d++ = *s++;
+
+  return dst;
+}
+
+
+void*
+memcpy(void *dst, const void *src, uint n)
+{
+  return memmove(dst, src, n);
+}
+
+int
+strncmp(const char *p, const char *q, uint n)
+{
+  while(n > 0 && *p && *p == *q)
+    n--, p++, q++;
+  if(n == 0)
+    return 0;
+  return (uchar)*p - (uchar)*q;
+}
+
+char*
+strncpy(char *s, const char *t, int n)
+{
+  char *os;
+
+  os = s;
+  while(n-- > 0 && (*s++ = *t++) != 0)
+    ;
+  while(n-- > 0)
+    *s++ = 0;
+  return os;
+}
+
+
+char*
+safestrcpy(char *s, const char *t, int n)
+{
+  char *os;
+
+  os = s;
+  if(n <= 0)
+    return os;
+  while(--n > 0 && (*s++ = *t++) != 0)
+    ;
+  *s = 0;
+  return os;
+}
+
+int
+strlen(const char *s)
+{
+  int n;
+
+  for(n = 0; s[n]; n++)
+    ;
+  return n;
+}
+
+
+=== Phase 1: Lexical Analysis ===
+Generated 1248 tokens
+
+=== Phase 2: Parsing ===
+Parsed AST with 33 top-level declarations
+
+=== Phase 3: Semantic Analysis ===
+Semantic analysis passed
+
+=== Phase 4: IR Generation ===
+Generated IR with 26 functions
+IR:
+
+define i32 @inb(i32 port) {
+  %data = alloca i32
+
+entry_0:
+  %t0 = alloca i32 
+  %t1 = store void %port, %t0
+  %t2 = alloca i32 
+  asm volatile "in %1,%0"
+  %t4 = load i32 %t2
+  ret %t4
+}
+
+define void @insl(i32 port, ptr addr, i32 cnt) {
+
+entry_1:
+  %t5 = alloca i32 
+  %t6 = store void %port, %t5
+  %t7 = alloca ptr 
+  %t8 = store void %addr, %t7
+  %t9 = alloca i32 
+  %t10 = store void %cnt, %t9
+  asm volatile "cld; rep insl"
+}
+
+define void @outb(i32 port, i32 data) {
+
+entry_2:
+  %t12 = alloca i32 
+  %t13 = store void %port, %t12
+  %t14 = alloca i32 
+  %t15 = store void %data, %t14
+  asm volatile "out %0,%1"
+}
+
+define void @outw(i32 port, i32 data) {
+
+entry_3:
+  %t17 = alloca i32 
+  %t18 = store void %port, %t17
+  %t19 = alloca i32 
+  %t20 = store void %data, %t19
+  asm volatile "out %0,%1"
+}
+
+define void @outsl(i32 port, ptr addr, i32 cnt) {
+
+entry_4:
+  %t22 = alloca i32 
+  %t23 = store void %port, %t22
+  %t24 = alloca ptr 
+  %t25 = store void %addr, %t24
+  %t26 = alloca i32 
+  %t27 = store void %cnt, %t26
+  asm volatile "cld; rep outsl"
+}
+
+define void @stosb(ptr addr, i32 data, i32 cnt) {
+
+entry_5:
+  %t29 = alloca ptr 
+  %t30 = store void %addr, %t29
+  %t31 = alloca i32 
+  %t32 = store void %data, %t31
+  %t33 = alloca i32 
+  %t34 = store void %cnt, %t33
+  asm volatile "cld; rep stosb"
+}
+
+define void @stosl(ptr addr, i32 data, i32 cnt) {
+
+entry_6:
+  %t36 = alloca ptr 
+  %t37 = store void %addr, %t36
+  %t38 = alloca i32 
+  %t39 = store void %data, %t38
+  %t40 = alloca i32 
+  %t41 = store void %cnt, %t40
+  asm volatile "cld; rep stosl"
+}
+
+define void @lgdt(ptr p, i32 size) {
+  %pd = alloca ptr
+
+entry_7:
+  %t43 = alloca ptr 
+  %t44 = store void %p, %t43
+  %t45 = alloca i32 
+  %t46 = store void %size, %t45
+  %t47 = alloca ptr 
+  %t48 = load i32 %t45
+  %t49 = sub i32 %t48, 1
+  %t50 = store void %t49, %t47
+  %t51 = load ptr %t43
+  %t52 = store void %t51, %t47
+  %t53 = load ptr %t43
+  %t54 = shr i32 %t53, 16
+  %t55 = store void %t54, %t47
+  asm volatile "lgdt (%0)"
+}
+
+define void @lidt(ptr p, i32 size) {
+  %pd = alloca ptr
+
+entry_8:
+  %t57 = alloca ptr 
+  %t58 = store void %p, %t57
+  %t59 = alloca i32 
+  %t60 = store void %size, %t59
+  %t61 = alloca ptr 
+  %t62 = load i32 %t59
+  %t63 = sub i32 %t62, 1
+  %t64 = store void %t63, %t61
+  %t65 = load ptr %t57
+  %t66 = store void %t65, %t61
+  %t67 = load ptr %t57
+  %t68 = shr i32 %t67, 16
+  %t69 = store void %t68, %t61
+  asm volatile "lidt (%0)"
+}
+
+define void @ltr(i32 sel) {
+
+entry_9:
+  %t71 = alloca i32 
+  %t72 = store void %sel, %t71
+  asm volatile "ltr %0"
+}
+
+define i32 @readeflags() {
+  %eflags = alloca i32
+
+entry_10:
+  %t74 = alloca i32 
+  asm volatile "pushf; pop %0"
+  %t76 = load i32 %t74
+  ret %t76
+}
+
+define void @loadgs(i32 v) {
+
+entry_11:
+  %t77 = alloca i32 
+  %t78 = store void %v, %t77
+  asm volatile "movw %0, %%gs"
+}
+
+define void @cli() {
+
+entry_12:
+  asm volatile "cli"
+}
+
+define void @sti() {
+
+entry_13:
+  asm volatile "sti"
+}
+
+define void @hlt() {
+
+entry_14:
+  asm volatile "hlt"
+}
+
+define i32 @xchg(ptr addr, i32 newval) {
+  %result = alloca i32
+
+entry_15:
+  %t83 = alloca ptr 
+  %t84 = store void %addr, %t83
+  %t85 = alloca i32 
+  %t86 = store void %newval, %t85
+  %t87 = alloca i32 
+  asm volatile "lock; xchgl %0, %1"
+  %t89 = load i32 %t87
+  ret %t89
+}
+
+define i32 @rcr2() {
+  %val = alloca i32
+
+entry_16:
+  %t90 = alloca i32 
+  asm volatile "mov %%cr2,%0"
+  %t92 = load i32 %t90
+  ret %t92
+}
+
+define void @lcr3(i32 val) {
+
+entry_17:
+  %t93 = alloca i32 
+  %t94 = store void %val, %t93
+  asm volatile "mov %0,%%cr3"
+}
+
+define ptr @memset(ptr dst, i32 c, i32 n) {
+
+entry_18:
+  %t96 = alloca ptr 
+  %t97 = store void %dst, %t96
+  %t98 = alloca i32 
+  %t99 = store void %c, %t98
+  %t100 = alloca i32 
+  %t101 = store void %n, %t100
+  %t102 = load ptr %t96
+  %t103 = mod i32 %t102, 4
+  %t104 = eq i32 %t103, 0
+  %t105 = load i32 %t100
+  %t106 = mod i32 %t105, 4
+  %t107 = eq i32 %t106, 0
+  %t108 = and i32 %t104, %t107
+  jump_if %t108, then_19, else_20
+
+then_19:
+  %t109 = load i32 %t98
+  %t110 = band i32 %t109, 255
+  %t111 = store void %t110, %t98
+  %t112 = load ptr %t96
+  %t113 = load i32 %t98
+  %t114 = shl i32 %t113, 24
+  %t115 = load i32 %t98
+  %t116 = shl i32 %t115, 16
+  %t117 = bor i32 %t114, %t116
+  %t118 = load i32 %t98
+  %t119 = shl i32 %t118, 8
+  %t120 = bor i32 %t117, %t119
+  %t121 = load i32 %t98
+  %t122 = bor i32 %t120, %t121
+  %t123 = load i32 %t100
+  %t124 = div i32 %t123, 4
+  %stosl = call stosl(%t112, %t122, %t124)
+  jump merge_21
+
+else_20:
+  %t126 = load ptr %t96
+  %t127 = load i32 %t98
+  %t128 = load i32 %t100
+  %stosb = call stosb(%t126, %t127, %t128)
+  jump merge_21
+
+merge_21:
+  %t130 = load ptr %t96
+  ret %t130
+}
+
+define i32 @memcmp(ptr v1, ptr v2, i32 n) {
+  %s1 = alloca ptr
+  %s2 = alloca ptr
+
+entry_22:
+  %t131 = alloca ptr 
+  %t132 = store void %v1, %t131
+  %t133 = alloca ptr 
+  %t134 = store void %v2, %t133
+  %t135 = alloca i32 
+  %t136 = store void %n, %t135
+  %t137 = alloca ptr 
+  %t138 = alloca ptr 
+  %t139 = load ptr %t131
+  %t140 = store void %t139, %t137
+  %t141 = load ptr %t133
+  %t142 = store void %t141, %t138
+  jump while.cond_23
+
+while.cond_23:
+  %t143 = load i32 %t135
+  %t144 = load i32 %t135
+  %t145 = add i32 %t144, -1
+  %t146 = store void %t145, %t135
+  %t147 = gt i32 %t144, 0
+  jump_if %t147, while.body_24, while.after_25
+
+while.body_24:
+  %t148 = load ptr %t137
+  %t149 = load i32 %t148
+  %t150 = load ptr %t138
+  %t151 = load i32 %t150
+  %t152 = ne i32 %t149, %t151
+  jump_if %t152, then_26, merge_27
+
+then_26:
+  %t153 = load ptr %t137
+  %t154 = load i32 %t153
+  %t155 = load ptr %t138
+  %t156 = load i32 %t155
+  %t157 = sub i32 %t154, %t156
+  ret %t157
+  jump merge_27
+
+merge_27:
+  %t158 = load ptr %t137
+  %t159 = load i32 %t137
+  %t160 = add i32 %t159, 1
+  %t161 = store void %t160, %t137
+  %t162 = load ptr %t138
+  %t163 = load i32 %t138
+  %t164 = add i32 %t163, 1
+  %t165 = store void %t164, %t138
+  jump while.cond_23
+
+while.after_25:
+  ret 0
+}
+
+define ptr @memmove(ptr dst, ptr src, i32 n) {
+  %s = alloca ptr
+  %d = alloca ptr
+
+entry_28:
+  %t166 = alloca ptr 
+  %t167 = store void %dst, %t166
+  %t168 = alloca ptr 
+  %t169 = store void %src, %t168
+  %t170 = alloca i32 
+  %t171 = store void %n, %t170
+  %t172 = alloca ptr 
+  %t173 = alloca ptr 
+  %t174 = load ptr %t168
+  %t175 = store void %t174, %t172
+  %t176 = load ptr %t166
+  %t177 = store void %t176, %t173
+  %t178 = load ptr %t172
+  %t179 = load ptr %t173
+  %t180 = lt i32 %t178, %t179
+  %t181 = load ptr %t172
+  %t182 = load i32 %t170
+  %t183 = add i32 %t181, %t182
+  %t184 = load ptr %t173
+  %t185 = gt i32 %t183, %t184
+  %t186 = and i32 %t180, %t185
+  jump_if %t186, then_29, else_30
+
+then_29:
+  %t187 = load ptr %t172
+  %t188 = load i32 %t170
+  %t189 = add i32 %t187, %t188
+  %t190 = store void %t189, %t172
+  %t191 = load ptr %t173
+  %t192 = load i32 %t170
+  %t193 = add i32 %t191, %t192
+  %t194 = store void %t193, %t173
+  jump while.cond_32
+
+while.cond_32:
+  %t195 = load i32 %t170
+  %t196 = load i32 %t170
+  %t197 = add i32 %t196, -1
+  %t198 = store void %t197, %t170
+  %t199 = gt i32 %t196, 0
+  jump_if %t199, while.body_33, while.after_34
+
+while.body_33:
+  %t200 = load ptr %t173
+  %t201 = load i32 %t173
+  %t202 = add i32 %t201, -1
+  %t203 = store void %t202, %t173
+  %t204 = load ptr %t172
+  %t205 = load i32 %t172
+  %t206 = add i32 %t205, -1
+  %t207 = store void %t206, %t172
+  %t208 = load i32 %t206
+  %t209 = store void %t208, %t202
+  jump while.cond_32
+
+while.after_34:
+  jump merge_31
+
+else_30:
+  jump while.cond_35
+
+while.cond_35:
+  %t210 = load i32 %t170
+  %t211 = load i32 %t170
+  %t212 = add i32 %t211, -1
+  %t213 = store void %t212, %t170
+  %t214 = gt i32 %t211, 0
+  jump_if %t214, while.body_36, while.after_37
+
+while.body_36:
+  %t215 = load ptr %t173
+  %t216 = load i32 %t173
+  %t217 = add i32 %t216, 1
+  %t218 = store void %t217, %t173
+  %t219 = load ptr %t172
+  %t220 = load i32 %t172
+  %t221 = add i32 %t220, 1
+  %t222 = store void %t221, %t172
+  %t223 = load i32 %t220
+  %t224 = store void %t223, %t216
+  jump while.cond_35
+
+while.after_37:
+  jump merge_31
+
+merge_31:
+  %t225 = load ptr %t166
+  ret %t225
+}
+
+define ptr @memcpy(ptr dst, ptr src, i32 n) {
+
+entry_38:
+  %t226 = alloca ptr 
+  %t227 = store void %dst, %t226
+  %t228 = alloca ptr 
+  %t229 = store void %src, %t228
+  %t230 = alloca i32 
+  %t231 = store void %n, %t230
+  %t232 = load ptr %t226
+  %t233 = load ptr %t228
+  %t234 = load i32 %t230
+  %memmove = call memmove(%t232, %t233, %t234)
+  ret %t235
+}
+
+define i32 @strncmp(ptr p, ptr q, i32 n) {
+
+entry_39:
+  %t236 = alloca ptr 
+  %t237 = store void %p, %t236
+  %t238 = alloca ptr 
+  %t239 = store void %q, %t238
+  %t240 = alloca i32 
+  %t241 = store void %n, %t240
+  jump while.cond_40
+
+while.cond_40:
+  %t242 = load i32 %t240
+  %t243 = gt i32 %t242, 0
+  %t244 = load ptr %t236
+  %t245 = load i32 %t244
+  %t246 = and i32 %t243, %t245
+  %t247 = load ptr %t236
+  %t248 = load i32 %t247
+  %t249 = load ptr %t238
+  %t250 = load i32 %t249
+  %t251 = eq i32 %t248, %t250
+  %t252 = and i32 %t246, %t251
+  jump_if %t252, while.body_41, while.after_42
+
+while.body_41:
+  %t253 = load i32 %t240
+  %t254 = load i32 %t240
+  %t255 = add i32 %t254, -1
+  %t256 = store void %t255, %t240
+  %t257 = load ptr %t236
+  %t258 = load i32 %t236
+  %t259 = add i32 %t258, 1
+  %t260 = store void %t259, %t236
+  %t261 = load ptr %t238
+  %t262 = load i32 %t238
+  %t263 = add i32 %t262, 1
+  %t264 = store void %t263, %t238
+  jump while.cond_40
+
+while.after_42:
+  %t265 = load i32 %t240
+  %t266 = eq i32 %t265, 0
+  jump_if %t266, then_43, merge_44
+
+then_43:
+  ret 0
+  jump merge_44
+
+merge_44:
+  %t267 = load ptr %t236
+  %t268 = load i32 %t267
+  %t269 = load ptr %t238
+  %t270 = load i32 %t269
+  %t271 = sub i32 %t268, %t270
+  ret %t271
+}
+
+define ptr @strncpy(ptr s, ptr t, i32 n) {
+  %os = alloca ptr
+
+entry_45:
+  %t272 = alloca ptr 
+  %t273 = store void %s, %t272
+  %t274 = alloca ptr 
+  %t275 = store void %t, %t274
+  %t276 = alloca i32 
+  %t277 = store void %n, %t276
+  %t278 = alloca ptr 
+  %t279 = load ptr %t272
+  %t280 = store void %t279, %t278
+  jump while.cond_46
+
+while.cond_46:
+  %t281 = load i32 %t276
+  %t282 = load i32 %t276
+  %t283 = add i32 %t282, -1
+  %t284 = store void %t283, %t276
+  %t285 = gt i32 %t282, 0
+  %t286 = load ptr %t272
+  %t287 = load i32 %t272
+  %t288 = add i32 %t287, 1
+  %t289 = store void %t288, %t272
+  %t290 = load ptr %t274
+  %t291 = load i32 %t274
+  %t292 = add i32 %t291, 1
+  %t293 = store void %t292, %t274
+  %t294 = load i32 %t291
+  %t295 = store void %t294, %t287
+  %t296 = ne i32 %t294, 0
+  %t297 = and i32 %t285, %t296
+  jump_if %t297, while.body_47, while.after_48
+
+while.body_47:
+  jump while.cond_46
+
+while.after_48:
+  jump while.cond_49
+
+while.cond_49:
+  %t298 = load i32 %t276
+  %t299 = load i32 %t276
+  %t300 = add i32 %t299, -1
+  %t301 = store void %t300, %t276
+  %t302 = gt i32 %t299, 0
+  jump_if %t302, while.body_50, while.after_51
+
+while.body_50:
+  %t303 = load ptr %t272
+  %t304 = load i32 %t272
+  %t305 = add i32 %t304, 1
+  %t306 = store void %t305, %t272
+  %t307 = store void 0, %t304
+  jump while.cond_49
+
+while.after_51:
+  %t308 = load ptr %t278
+  ret %t308
+}
+
+define ptr @safestrcpy(ptr s, ptr t, i32 n) {
+  %os = alloca ptr
+
+entry_52:
+  %t309 = alloca ptr 
+  %t310 = store void %s, %t309
+  %t311 = alloca ptr 
+  %t312 = store void %t, %t311
+  %t313 = alloca i32 
+  %t314 = store void %n, %t313
+  %t315 = alloca ptr 
+  %t316 = load ptr %t309
+  %t317 = store void %t316, %t315
+  %t318 = load i32 %t313
+  %t319 = le i32 %t318, 0
+  jump_if %t319, then_53, merge_54
+
+then_53:
+  %t320 = load ptr %t315
+  ret %t320
+  jump merge_54
+
+merge_54:
+  jump while.cond_55
+
+while.cond_55:
+  %t321 = load i32 %t313
+  %t322 = load i32 %t313
+  %t323 = add i32 %t322, -1
+  %t324 = store void %t323, %t313
+  %t325 = gt i32 %t323, 0
+  %t326 = load ptr %t309
+  %t327 = load i32 %t309
+  %t328 = add i32 %t327, 1
+  %t329 = store void %t328, %t309
+  %t330 = load ptr %t311
+  %t331 = load i32 %t311
+  %t332 = add i32 %t331, 1
+  %t333 = store void %t332, %t311
+  %t334 = load i32 %t331
+  %t335 = store void %t334, %t327
+  %t336 = ne i32 %t334, 0
+  %t337 = and i32 %t325, %t336
+  jump_if %t337, while.body_56, while.after_57
+
+while.body_56:
+  jump while.cond_55
+
+while.after_57:
+  %t338 = load ptr %t309
+  %t339 = store void 0, %t338
+  %t340 = load ptr %t315
+  ret %t340
+}
+
+define i32 @strlen(ptr s) {
+  %n = alloca i32
+
+entry_58:
+  %t341 = alloca ptr 
+  %t342 = store void %s, %t341
+  %t343 = alloca i32 
+  %t344 = store void 0, %t343
+  jump for.cond_59
+
+for.cond_59:
+  %t345 = load i32 %t341
+  jump_if %t345, for.body_60, for.after_62
+
+for.body_60:
+  jump for.inc_61
+
+for.inc_61:
+  %t346 = load i32 %t343
+  %t347 = load i32 %t343
+  %t348 = add i32 %t347, 1
+  %t349 = store void %t348, %t343
+  jump for.cond_59
+
+for.after_62:
+  %t350 = load i32 %t343
+  ret %t350
+}
+
+
+
+=== Phase 5: Assembly Generation ===
+Generated x86-64 assembly:
+.text
+.globl inb
+inb:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 48
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_0:
+  lea rax, [rbp - 24]
+  mov rdi, (rax)
+  lea rax, [rbp - 40]
+  in %1,%0
+  mov (rax), rcx
+  mov rax, rcx
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbx
+  add rsp, 48
+  pop rbp
+  ret
+.globl insl
+insl:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 48
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_1:
+  lea rax, [rbp - 8]
+  mov rdi, (rax)
+  lea rax, [rbp - 24]
+  mov rsi, (rax)
+  lea rax, [rbp - 40]
+  mov rdx, (rax)
+  cld; rep insl
+.globl outb
+outb:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 32
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_2:
+  lea rax, [rbp - 8]
+  mov rdi, (rax)
+  lea rax, [rbp - 24]
+  mov rsi, (rax)
+  out %0,%1
+.globl outw
+outw:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 32
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_3:
+  lea rax, [rbp - 8]
+  mov rdi, (rax)
+  lea rax, [rbp - 24]
+  mov rsi, (rax)
+  out %0,%1
+.globl outsl
+outsl:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 48
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_4:
+  lea rax, [rbp - 8]
+  mov rdi, (rax)
+  lea rax, [rbp - 24]
+  mov rsi, (rax)
+  lea rax, [rbp - 40]
+  mov rdx, (rax)
+  cld; rep outsl
+.globl stosb
+stosb:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 48
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_5:
+  lea rax, [rbp - 8]
+  mov rdi, (rax)
+  lea rax, [rbp - 24]
+  mov rsi, (rax)
+  lea rax, [rbp - 40]
+  mov rdx, (rax)
+  cld; rep stosb
+.globl stosl
+stosl:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 48
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_6:
+  lea rax, [rbp - 8]
+  mov rdi, (rax)
+  lea rax, [rbp - 24]
+  mov rsi, (rax)
+  lea rax, [rbp - 40]
+  mov rdx, (rax)
+  cld; rep stosl
+.globl lgdt
+lgdt:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 64
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_7:
+  lea rax, [rbp - 24]
+  mov rdi, (rax)
+  lea rax, [rbp - 40]
+  mov rsi, (rax)
+  lea rax, [rbp - 56]
+  mov [rbp - 40], rcx
+  mov rcx, rdx
+  sub $1, rdx
+  mov [t49], (rax)
+  mov [rbp - 24], rax
+  mov rax, [rbp - 56]
+  mov [rbp - 24], rax
+  mov rax, rcx
+  shr $16, rcx
+  mov [t54], [rbp - 56]
+  lgdt (%0)
+.globl lidt
+lidt:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 64
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_8:
+  lea rax, [rbp - 24]
+  mov rdi, (rax)
+  lea rax, [rbp - 40]
+  mov rsi, (rax)
+  lea rax, [rbp - 56]
+  mov [rbp - 40], rcx
+  mov rcx, rdx
+  sub $1, rdx
+  mov [t63], (rax)
+  mov [rbp - 24], rax
+  mov rax, [rbp - 56]
+  mov [rbp - 24], rax
+  mov rax, rcx
+  shr $16, rcx
+  mov [t68], [rbp - 56]
+  lidt (%0)
+.globl ltr
+ltr:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 16
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_9:
+  lea rax, [rbp - 8]
+  mov rdi, (rax)
+  ltr %0
+.globl readeflags
+readeflags:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 32
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_10:
+  lea rax, [rbp - 24]
+  pushf; pop %0
+  mov (rax), rcx
+  mov rax, rcx
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbx
+  add rsp, 32
+  pop rbp
+  ret
+.globl loadgs
+loadgs:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 16
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_11:
+  lea rax, [rbp - 8]
+  mov rdi, (rax)
+  movw %0, %%gs
+.globl cli
+cli:
+  push rbp
+  mov rbp, rsp
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_12:
+  cli
+.globl sti
+sti:
+  push rbp
+  mov rbp, rsp
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_13:
+  sti
+.globl hlt
+hlt:
+  push rbp
+  mov rbp, rsp
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_14:
+  hlt
+.globl xchg
+xchg:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 64
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_15:
+  lea rax, [rbp - 24]
+  mov rdi, (rax)
+  lea rax, [rbp - 40]
+  mov rsi, (rax)
+  lea rax, [rbp - 56]
+  lock; xchgl %0, %1
+  mov (rax), rcx
+  mov rax, rcx
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbx
+  add rsp, 64
+  pop rbp
+  ret
+.globl rcr2
+rcr2:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 32
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_16:
+  lea rax, [rbp - 24]
+  mov %%cr2,%0
+  mov (rax), rcx
+  mov rax, rcx
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbx
+  add rsp, 32
+  pop rbp
+  ret
+.globl lcr3
+lcr3:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 16
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_17:
+  lea rax, [rbp - 8]
+  mov rdi, (rax)
+  mov %0,%%cr3
+.globl memset
+memset:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 48
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_18:
+  lea rax, [rbp - 8]
+  mov rdi, (rax)
+  lea rax, [rbp - 24]
+  mov rsi, (rax)
+  lea rax, [rbp - 40]
+  mov rdx, (rax)
+  mov [rbp - 8], rax
+  push rax
+  push rdx
+  mov rax, rax
+  cqo
+  idiv $4
+  mov rdx, rcx
+  pop rdx
+  pop rax
+  cmp $0, [t103]
+  xor rax, rax
+  sete rax
+  mov [rbp - 40], rax
+  push rax
+  push rdx
+  mov rax, rax
+  cqo
+  idiv $4
+  mov rdx, rcx
+  pop rdx
+  pop rax
+  cmp $0, [t106]
+  xor rax, rax
+  sete rax
+  mov [t104], rax
+  and [t107], rax
+  cmp [t108], 0
+  jne then_19
+  jmp else_20
+then_19:
+  mov [rbp - 24], rax
+  mov rax, rcx
+  and $255, rcx
+  mov [t110], [rbp - 24]
+  mov [rbp - 8], rax
+  mov [rbp - 24], rcx
+  mov rcx, rdx
+  shl $24, rdx
+  mov [rbp - 24], rcx
+  mov rcx, rdx
+  shl $16, rdx
+  mov [t114], rcx
+  or [t116], rcx
+  mov [rbp - 24], rcx
+  mov rcx, rdx
+  shl $8, rdx
+  mov [t117], rcx
+  or [t119], rcx
+  mov [rbp - 24], rcx
+  mov [t120], rdx
+  or rcx, rdx
+  mov [rbp - 40], rcx
+  push rax
+  push rdx
+  mov rcx, rax
+  cqo
+  idiv $4
+  mov rax, rdx
+  pop rdx
+  pop rax
+  push rax
+  push rcx
+  push rdx
+  push rsi
+  push rdi
+  push r8
+  push r9
+  push r10
+  push r11
+  mov rdi, rax
+  mov rsi, [t122]
+  mov rdx, [t124]
+  call stosl
+  pop r11
+  pop r10
+  pop r9
+  pop r8
+  pop rdi
+  pop rsi
+  pop rdx
+  pop rcx
+  pop rax
+  mov rcx, rax
+  jmp merge_21
+else_20:
+  mov [rbp - 8], rdx
+  mov [rbp - 24], rsi
+  mov [rbp - 40], rdi
+  push rax
+  push rcx
+  push rdx
+  push rsi
+  push rdi
+  push r8
+  push r9
+  push r10
+  push r11
+  mov rdi, rdx
+  mov rsi, rsi
+  mov rdx, rdi
+  call stosb
+  pop r11
+  pop r10
+  pop r9
+  pop r8
+  pop rdi
+  pop rsi
+  pop rdx
+  pop rcx
+  pop rax
+  mov r8, rax
+  jmp merge_21
+merge_21:
+  mov [rbp - 8], r9
+  mov rax, r9
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbx
+  add rsp, 48
+  pop rbp
+  ret
+.globl memcmp
+memcmp:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 112
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_22:
+  lea rax, [rbp - 40]
+  mov rdi, (rax)
+  lea rax, [rbp - 56]
+  mov rsi, (rax)
+  lea rax, [rbp - 72]
+  mov rdx, (rax)
+  lea rax, [rbp - 88]
+  lea rcx, [rbp - 104]
+  mov [rbp - 40], rdx
+  mov rdx, (rax)
+  mov [rbp - 56], rax
+  mov rax, (rcx)
+  jmp while.cond_23
+while.cond_23:
+  mov [rbp - 72], rax
+  mov [rbp - 72], rcx
+  mov rcx, rdx
+  add $-1, rdx
+  mov [t145], [rbp - 72]
+  cmp $0, [t144]
+  xor rcx, rcx
+  setg rcx
+  cmp [t147], 0
+  jne while.body_24
+  jmp while.after_25
+while.body_24:
+  mov [rbp - 88], rcx
+  mov (rcx), rdx
+  mov [rbp - 104], rcx
+  mov (rcx), rsi
+  cmp rsi, rdx
+  xor rcx, rcx
+  setne rcx
+  cmp [t152], 0
+  jne then_26
+  jmp merge_27
+then_26:
+  mov [rbp - 88], rcx
+  mov (rcx), rdx
+  mov [rbp - 104], rcx
+  mov (rcx), rsi
+  mov rdx, rcx
+  sub rsi, rcx
+  mov rax, [t157]
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbx
+  add rsp, 112
+  pop rbp
+  ret
+  jmp merge_27
+merge_27:
+  mov [rbp - 88], rcx
+  mov [rbp - 88], rdx
+  mov rdx, rsi
+  add $1, rsi
+  mov [t160], [rbp - 88]
+  mov [rbp - 104], rdx
+  mov [rbp - 104], rsi
+  mov rsi, rdi
+  add $1, rdi
+  mov [t164], [rbp - 104]
+  jmp while.cond_23
+while.after_25:
+  mov rax, $0
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbx
+  add rsp, 112
+  pop rbp
+  ret
+.globl memmove
+memmove:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 112
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_28:
+  lea rax, [rbp - 40]
+  mov rdi, (rax)
+  lea rax, [rbp - 56]
+  mov rsi, (rax)
+  lea rax, [rbp - 72]
+  mov rdx, (rax)
+  lea rax, [rbp - 88]
+  lea rcx, [rbp - 104]
+  mov [rbp - 56], rdx
+  mov rdx, (rax)
+  mov [rbp - 40], rax
+  mov rax, (rcx)
+  mov [rbp - 88], rax
+  mov [rbp - 104], rcx
+  cmp rcx, rax
+  xor rdx, rdx
+  setl rdx
+  mov [rbp - 88], rax
+  mov [rbp - 72], rcx
+  mov rax, rdx
+  add rcx, rdx
+  mov [rbp - 104], rax
+  cmp rax, [t183]
+  xor rcx, rcx
+  setg rcx
+  mov [t180], rax
+  and [t185], rax
+  cmp [t186], 0
+  jne then_29
+  jmp else_30
+then_29:
+  mov [rbp - 88], rax
+  mov [rbp - 72], rcx
+  mov rax, rdx
+  add rcx, rdx
+  mov [t189], [rbp - 88]
+  mov [rbp - 104], rax
+  mov [rbp - 72], rcx
+  mov rax, rdx
+  add rcx, rdx
+  mov [t193], [rbp - 104]
+  jmp while.cond_32
+while.cond_32:
+  mov [rbp - 72], rax
+  mov [rbp - 72], rcx
+  mov rcx, rdx
+  add $-1, rdx
+  mov [t197], [rbp - 72]
+  cmp $0, [t196]
+  xor rcx, rcx
+  setg rcx
+  cmp [t199], 0
+  jne while.body_33
+  jmp while.after_34
+while.body_33:
+  mov [rbp - 104], rcx
+  mov [rbp - 104], rdx
+  mov rdx, rsi
+  add $-1, rsi
+  mov [t202], [rbp - 104]
+  mov [rbp - 88], rdx
+  mov [rbp - 88], rsi
+  mov rsi, rdi
+  add $-1, rdi
+  mov [t206], [rbp - 88]
+  mov [t206], rsi
+  mov rsi, [t202]
+  jmp while.cond_32
+while.after_34:
+  jmp merge_31
+else_30:
+  jmp while.cond_35
+while.cond_35:
+  mov [rbp - 72], rsi
+  mov [rbp - 72], rdi
+  mov rdi, r8
+  add $-1, r8
+  mov [t212], [rbp - 72]
+  cmp $0, [t211]
+  xor rdi, rdi
+  setg rdi
+  cmp [t214], 0
+  jne while.body_36
+  jmp while.after_37
+while.body_36:
+  mov [rbp - 104], rdi
+  mov [rbp - 104], r8
+  mov r8, r9
+  add $1, r9
+  mov [t217], [rbp - 104]
+  mov [rbp - 88], r8
+  mov [rbp - 88], r9
+  mov r9, r10
+  add $1, r10
+  mov [t221], [rbp - 88]
+  mov [t220], r9
+  mov r9, [t216]
+  jmp while.cond_35
+while.after_37:
+  jmp merge_31
+merge_31:
+  mov [rbp - 40], r9
+  mov rax, r9
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbx
+  add rsp, 112
+  pop rbp
+  ret
+.globl memcpy
+memcpy:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 48
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_38:
+  lea rax, [rbp - 8]
+  mov rdi, (rax)
+  lea rax, [rbp - 24]
+  mov rsi, (rax)
+  lea rax, [rbp - 40]
+  mov rdx, (rax)
+  mov [rbp - 8], rax
+  mov [rbp - 24], rcx
+  mov [rbp - 40], rdx
+  push rax
+  push rcx
+  push rdx
+  push rsi
+  push rdi
+  push r8
+  push r9
+  push r10
+  push r11
+  mov rdi, rax
+  mov rsi, rcx
+  mov rdx, rdx
+  call memmove
+  pop r11
+  pop r10
+  pop r9
+  pop r8
+  pop rdi
+  pop rsi
+  pop rdx
+  pop rcx
+  pop rax
+  mov rsi, rax
+  mov rax, [t235]
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbx
+  add rsp, 48
+  pop rbp
+  ret
+.globl strncmp
+strncmp:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 48
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_39:
+  lea rax, [rbp - 8]
+  mov rdi, (rax)
+  lea rax, [rbp - 24]
+  mov rsi, (rax)
+  lea rax, [rbp - 40]
+  mov rdx, (rax)
+  jmp while.cond_40
+while.cond_40:
+  mov [rbp - 40], rax
+  cmp $0, rax
+  xor rcx, rcx
+  setg rcx
+  mov [rbp - 8], rax
+  mov (rax), rcx
+  mov [t243], rax
+  and rcx, rax
+  mov [rbp - 8], rax
+  mov (rax), rcx
+  mov [rbp - 24], rax
+  mov (rax), rdx
+  cmp rdx, rcx
+  xor rax, rax
+  sete rax
+  mov [t246], rax
+  and [t251], rax
+  cmp [t252], 0
+  jne while.body_41
+  jmp while.after_42
+while.body_41:
+  mov [rbp - 40], rax
+  mov [rbp - 40], rcx
+  mov rcx, rdx
+  add $-1, rdx
+  mov [t255], [rbp - 40]
+  mov [rbp - 8], rcx
+  mov [rbp - 8], rdx
+  mov rdx, rsi
+  add $1, rsi
+  mov [t259], [rbp - 8]
+  mov [rbp - 24], rdx
+  mov [rbp - 24], rsi
+  mov rsi, rdi
+  add $1, rdi
+  mov [t263], [rbp - 24]
+  jmp while.cond_40
+while.after_42:
+  mov [rbp - 40], rsi
+  cmp $0, rsi
+  xor rdi, rdi
+  sete rdi
+  cmp [t266], 0
+  jne then_43
+  jmp merge_44
+then_43:
+  mov rax, $0
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbx
+  add rsp, 48
+  pop rbp
+  ret
+  jmp merge_44
+merge_44:
+  mov [rbp - 8], rsi
+  mov (rsi), rdi
+  mov [rbp - 24], rsi
+  mov (rsi), r8
+  mov rdi, rsi
+  sub r8, rsi
+  mov rax, [t271]
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbx
+  add rsp, 48
+  pop rbp
+  ret
+.globl strncpy
+strncpy:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 80
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_45:
+  lea rax, [rbp - 24]
+  mov rdi, (rax)
+  lea rax, [rbp - 40]
+  mov rsi, (rax)
+  lea rax, [rbp - 56]
+  mov rdx, (rax)
+  lea rax, [rbp - 72]
+  mov [rbp - 24], rcx
+  mov rcx, (rax)
+  jmp while.cond_46
+while.cond_46:
+  mov [rbp - 56], rax
+  mov [rbp - 56], rcx
+  mov rcx, rdx
+  add $-1, rdx
+  mov [t283], [rbp - 56]
+  cmp $0, [t282]
+  xor rcx, rcx
+  setg rcx
+  mov [rbp - 24], rcx
+  mov [rbp - 24], rdx
+  mov rdx, rsi
+  add $1, rsi
+  mov [t288], [rbp - 24]
+  mov [rbp - 40], rdx
+  mov [rbp - 40], rsi
+  mov rsi, rdi
+  add $1, rdi
+  mov [t292], [rbp - 40]
+  mov [t291], rsi
+  mov rsi, [t287]
+  cmp $0, [t294]
+  xor rsi, rsi
+  setne rsi
+  mov [t285], rsi
+  and [t296], rsi
+  cmp [t297], 0
+  jne while.body_47
+  jmp while.after_48
+while.body_47:
+  jmp while.cond_46
+while.after_48:
+  jmp while.cond_49
+while.cond_49:
+  mov [rbp - 56], rsi
+  mov [rbp - 56], rdi
+  mov rdi, r8
+  add $-1, r8
+  mov [t300], [rbp - 56]
+  cmp $0, [t299]
+  xor rdi, rdi
+  setg rdi
+  cmp [t302], 0
+  jne while.body_50
+  jmp while.after_51
+while.body_50:
+  mov [rbp - 24], rdi
+  mov [rbp - 24], r8
+  mov r8, r9
+  add $1, r9
+  mov [t305], [rbp - 24]
+  mov $0, [t304]
+  jmp while.cond_49
+while.after_51:
+  mov [rbp - 72], r8
+  mov rax, r8
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbx
+  add rsp, 80
+  pop rbp
+  ret
+.globl safestrcpy
+safestrcpy:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 80
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_52:
+  lea rax, [rbp - 24]
+  mov rdi, (rax)
+  lea rax, [rbp - 40]
+  mov rsi, (rax)
+  lea rax, [rbp - 56]
+  mov rdx, (rax)
+  lea rax, [rbp - 72]
+  mov [rbp - 24], rcx
+  mov rcx, (rax)
+  mov [rbp - 56], rax
+  cmp $0, rax
+  xor rcx, rcx
+  setle rcx
+  cmp [t319], 0
+  jne then_53
+  jmp merge_54
+then_53:
+  mov [rbp - 72], rax
+  mov rax, rax
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbx
+  add rsp, 80
+  pop rbp
+  ret
+  jmp merge_54
+merge_54:
+  jmp while.cond_55
+while.cond_55:
+  mov [rbp - 56], rcx
+  mov [rbp - 56], rdx
+  mov rdx, rsi
+  add $-1, rsi
+  mov [t323], [rbp - 56]
+  cmp $0, [t323]
+  xor rdx, rdx
+  setg rdx
+  mov [rbp - 24], rdx
+  mov [rbp - 24], rsi
+  mov rsi, rdi
+  add $1, rdi
+  mov [t328], [rbp - 24]
+  mov [rbp - 40], rsi
+  mov [rbp - 40], rdi
+  mov rdi, r8
+  add $1, r8
+  mov [t332], [rbp - 40]
+  mov [t331], rdi
+  mov rdi, [t327]
+  cmp $0, [t334]
+  xor rdi, rdi
+  setne rdi
+  mov [t325], rdi
+  and [t336], rdi
+  cmp [t337], 0
+  jne while.body_56
+  jmp while.after_57
+while.body_56:
+  jmp while.cond_55
+while.after_57:
+  mov [rbp - 24], rdi
+  mov $0, (rdi)
+  mov [rbp - 72], rdi
+  mov rax, rdi
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbx
+  add rsp, 80
+  pop rbp
+  ret
+.globl strlen
+strlen:
+  push rbp
+  mov rbp, rsp
+  sub rsp, 48
+  push rbx
+  push r12
+  push r13
+  push r14
+  push r15
+entry_58:
+  lea rax, [rbp - 24]
+  mov rdi, (rax)
+  lea rax, [rbp - 40]
+  mov $0, (rax)
+  jmp for.cond_59
+for.cond_59:
+  mov [rbp - 24], rax
+  cmp rax, 0
+  jne for.body_60
+  jmp for.after_62
+for.body_60:
+  jmp for.inc_61
+for.inc_61:
+  mov [rbp - 40], rcx
+  mov [rbp - 40], rdx
+  mov rdx, rsi
+  add $1, rsi
+  mov [t348], [rbp - 40]
+  jmp for.cond_59
+for.after_62:
+  mov [rbp - 40], rdx
+  mov rax, rdx
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop rbx
+  add rsp, 48
+  pop rbp
+  ret
+
+
+
+=== Phase 6: ELF Object File Generation ===
+Successfully compiled to string.i
+ELF file size: 680 bytes
+
+=== ELF Header Info ===
+Magic: ELF
+Class: 64-bit
+Endianness: Little
+Machine: x86-64
+Type: Relocatable
+
+=== Compilation Complete ===
+The generated object file can be linked with:
+  gcc string.i -o output

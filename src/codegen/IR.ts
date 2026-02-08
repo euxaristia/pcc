@@ -39,6 +39,9 @@ export enum IROpCode {
   RET = 'ret',
   PHI = 'phi',
   
+  // Inline Assembly
+  ASM = 'asm',
+  
   // Type Conversion
   TRUNC = 'trunc',
   ZEXT = 'zext',
@@ -198,16 +201,20 @@ export function prettyPrintIR(module: IRModule): string {
       for (const instr of block.instructions) {
         if ('id' in instr && 'opcode' in instr) {
           const op = instr as IRInstruction;
-          result += `  %${op.id} = ${op.opcode} ${op.type} `;
-          result += op.operands.map(operand => {
-            if ('value' in operand) {
-              const const_op = operand as IRConstant;
-              return const_op.value.toString();
-            } else {
-              return '%' + (operand as IRValue).id;
-            }
-          }).join(', ');
-          result += '\n';
+          if (op.opcode === IROpCode.ASM) {
+            result += `  asm${op.metadata?.isVolatile ? ' volatile' : ''} "${op.metadata?.assembly}"\n`;
+          } else {
+            result += `  %${op.id} = ${op.opcode} ${op.type} `;
+            result += op.operands.map(operand => {
+              if ('value' in operand) {
+                const const_op = operand as IRConstant;
+                return const_op.value.toString();
+              } else {
+                return '%' + (operand as IRValue).id;
+              }
+            }).join(', ');
+            result += '\n';
+          }
         } else if ('name' in instr) {
           result += `  ; ${instr.name}\n`;
         } else if ('target' in instr) {

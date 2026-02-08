@@ -7,7 +7,7 @@ import {
   StringLiteralNode, CharacterLiteralNode, NodeType, ExpressionNode, StatementNode,
   TypeSpecifierNode, SizeofExpressionNode, CastExpressionNode, MemberAccessNode,
   ArrayAccessNode, EnumDeclarationNode, UnionDeclarationNode, AttributeNode,
-  InitializerListNode
+  InitializerListNode, MultiDeclarationNode
 } from '../parser/Parser';
 import { DataType } from '../semantic/SymbolTable';
 import {
@@ -138,7 +138,7 @@ export class IRGenerator {
         this.genId(),
         IROpCode.STORE,
         IRType.VOID,
-        [paramValue, createValue(this.genId(), param.type)] // Use temporary value for parameter
+        [paramValue, allocaInstr as IRValue]
       );
       entryBlock.instructions.push(storeInstr);
       
@@ -156,6 +156,15 @@ export class IRGenerator {
     switch (stmt.type) {
       case NodeType.DECLARATION:
         this.processVariableDeclaration(stmt as DeclarationNode);
+        break;
+
+      case NodeType.MULTI_DECLARATION:
+        (stmt as MultiDeclarationNode).declarations.forEach(decl => {
+          this.processVariableDeclaration(decl);
+        });
+        break;
+
+      case NodeType.EMPTY_STATEMENT:
         break;
 
       case NodeType.ASSIGNMENT:
@@ -196,6 +205,10 @@ export class IRGenerator {
 
       case NodeType.COMPOUND_STATEMENT:
         this.processCompoundStatement(stmt as any);
+        break;
+
+      case NodeType.ASM_STATEMENT:
+        this.processAsmStatement(stmt as any);
         break;
 
       case NodeType.ATTRIBUTE_STMT:
@@ -290,6 +303,10 @@ export class IRGenerator {
       } else {
         throw new Error('Unsupported array access target');
       }
+    } else if (assign.target.type === NodeType.UNARY_EXPRESSION && (assign.target as UnaryExpressionNode).operator === '*') {
+      // Dereference target: *ptr = value
+      // The address is the value of the pointer expression
+      targetAddr = this.processExpression((assign.target as UnaryExpressionNode).operand) as IRValue;
     } else {
       throw new Error('Unsupported assignment target');
     }
@@ -533,6 +550,24 @@ export class IRGenerator {
     }
   }
 
+  private processAsmStatement(asm: any): void {
+    if (!this.context.currentBlock) {
+      throw new Error('Asm statement outside block');
+    }
+
+    const instr = createInstruction(
+      this.genId(),
+      IROpCode.ASM,
+      IRType.VOID,
+      []
+    );
+    instr.metadata = {
+      assembly: asm.assembly,
+      isVolatile: asm.isVolatile,
+    };
+    this.context.currentBlock.instructions.push(instr);
+  }
+
   private processExpression(expr: ExpressionNode): IRValue | IRConstant {
     switch (expr.type) {
       case NodeType.ASSIGNMENT:
@@ -543,6 +578,10 @@ export class IRGenerator {
 
       case NodeType.UNARY_EXPRESSION:
         return this.processUnaryExpression(expr as UnaryExpressionNode);
+
+      case NodeType.POSTFIX_EXPRESSION:
+        // Already handled via _post operator in processUnaryExpression
+        return this.processUnaryExpression(expr as any);
 
       case NodeType.TERNARY_EXPRESSION:
         return this.processTernaryExpression(expr as TernaryExpressionNode);
@@ -672,29 +711,31 @@ export class IRGenerator {
       case '-': opcode = IROpCode.SUB; break;
       case '!': opcode = IROpCode.NOT; break;
       case '~': opcode = IROpCode.BNOT; break;
+      case '++':
+      case '--':
       case '++_post':
       case '--_post':
-        // Handle post-increment/decrement: load value, compute new value, store back
-        const incrementValue = unary.operator === '++_post' ? 
+        const isPost = unary.operator.endsWith('_post');
+        const incrementValue = (unary.operator === '++' || unary.operator === '++_post') ? 
           createConstant(1, IRType.I32) : createConstant(-1, IRType.I32);
         
         if (unary.operand.type === NodeType.IDENTIFIER) {
           const ident = unary.operand as IdentifierNode;
           const addr = this.context.valueMap.get(ident.name);
           if (addr) {
-            const currentVal = createInstruction(this.genId(), IROpCode.LOAD, addr.type, [addr]);
+            const currentVal = createInstruction(this.genId(), IROpCode.LOAD, this.getPointedToType(addr.type), [addr]);
             this.context.currentBlock.instructions.push(currentVal);
             
-            const newVal = createInstruction(this.genId(), IROpCode.ADD, addr.type, [currentVal as IRValue, incrementValue]);
+            const newVal = createInstruction(this.genId(), IROpCode.ADD, currentVal.type, [currentVal as IRValue, incrementValue]);
             this.context.currentBlock.instructions.push(newVal);
             
             const store = createInstruction(this.genId(), IROpCode.STORE, IRType.VOID, [newVal as IRValue, addr]);
             this.context.currentBlock.instructions.push(store);
             
-            return currentVal as IRValue;
+            return (isPost ? currentVal : newVal) as IRValue;
           }
         }
-        throw new Error('Postfix increment/decrement only supported on identifiers for now');
+        throw new Error('Increment/decrement only supported on identifiers for now');
 
       default:
         throw new Error(`Unsupported unary operator: ${unary.operator}`);
@@ -846,7 +887,8 @@ export class IRGenerator {
 
   private processNumberLiteral(literal: NumberLiteralNode): IRConstant {
     const valueStr = literal.value.toLowerCase();
-    if (valueStr.endsWith('f')) {
+    const isHex = valueStr.startsWith('0x');
+    if (!isHex && valueStr.endsWith('f')) {
       return createConstant(parseFloat(literal.value), IRType.F32);
     }
     if (valueStr.includes('.') || valueStr.includes('e')) {
