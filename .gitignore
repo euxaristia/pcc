@@ -5,3 +5,9 @@ node_modules/
 *.o
 *.out
 pcc-dist.tar.gz
+demo.js
+demo.js.map
+demo.d.ts
+demo.d.ts.map
+ELF_BUG_REPORT.md
+linux-6.18.tar.xz
