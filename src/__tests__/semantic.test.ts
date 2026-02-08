@@ -107,8 +107,9 @@ int z = (x + y) / 2;
 
     it('should detect invalid binary operations', () => {
       const code = `
-int x = 1 + 'a';
-int y = 'b' * 'c';
+void* p = 0;
+int x = p + p;
+int y = p * 2;
 `;
       const errors = analyze(code);
       expect(errors).toHaveLength(2);
@@ -129,8 +130,10 @@ int w = x == y;
 
     it('should detect invalid comparisons', () => {
       const code = `
+struct Point { int x; int y; };
 int main() {
-    int x = 1 < 'a';
+    struct Point p;
+    int x = 1 < p;
     return 0;
 }
 `;
@@ -155,13 +158,14 @@ int main() {
       const code = `
 int main() {
     int x = 5;
-    x = 'a';
+    int* p = &x;
+    x = p;
     return 0;
 }
 `;
       const errors = analyze(code);
       expect(errors).toHaveLength(1);
-      expect(errors[0].message).toContain('Cannot assign char to int');
+      expect(errors[0].message).toContain('Cannot assign int* to int');
     });
 
     it('should detect use of undeclared variables', () => {
@@ -214,19 +218,29 @@ int main() {
       expect(errors[0].message).toContain('expects 2 arguments, got 1');
     });
 
-    it('should detect wrong argument types', () => {
-      const code = `
-int add(int a, int b) {
-    return a + b;
-}
-int main() {
-    return add(1, 'a');
-}
-`;
-      const errors = analyze(code);
-      expect(errors).toHaveLength(1);
-      expect(errors[0].message).toContain('Parameter 2 of function \'add\' expects int, got char');
-    });
+        it('should detect wrong argument types', () => {
+
+          const code = `
+
+    int add(int a, int b) { return a + b; }
+
+    int main() {
+
+        int* p = 0;
+
+        return add(1, p);
+
+    }
+
+    `;
+
+          const errors = analyze(code);
+
+          expect(errors).toHaveLength(1);
+
+          expect(errors[0].message).toContain('Parameter 2 of function \'add\' expects int, got int*');
+
+        });
   });
 
   describe('Return statements', () => {

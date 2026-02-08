@@ -595,6 +595,9 @@ export class IRGenerator {
       case '>=': opcode = IROpCode.GE; break;
       case '&&': opcode = IROpCode.AND; break;
       case '||': opcode = IROpCode.OR; break;
+      case ',':
+        // Comma operator: evaluate left, then right, result is right
+        return right as IRValue;
       default:
         throw new Error(`Unsupported binary operator: ${binary.operator}`);
     }

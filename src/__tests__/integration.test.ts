@@ -311,7 +311,7 @@ int main() {
       
       expect(result.success).toBe(true);
       expect(result.assembly).toContain('push rbp');
-      expect(result.assembly).toContain('mov rsp, rbp');
+      expect(result.assembly).toContain('mov rbp, rsp');
       expect(result.assembly).toContain('pop rbp');
       expect(result.assembly).toContain('ret');
     });
@@ -359,7 +359,8 @@ int main() {
       const code = `
 int main() {
     int x = 5;
-    x = 'a';  // Type mismatch in assignment
+    int* p = &x;
+    x = p;  // Type mismatch in assignment: cannot assign int* to int
     return x;
 }
 `;

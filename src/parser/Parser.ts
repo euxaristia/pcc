@@ -1450,7 +1450,7 @@ export class Parser {
         
         if (!this.check(TokenType.RIGHT_PAREN)) {
           do {
-            args.push(this.parseExpression());
+            args.push(this.parseAssignment());
           } while (this.match(TokenType.COMMA));
         }
         

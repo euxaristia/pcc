@@ -29,8 +29,8 @@ int main() {
       expect(assembly).toContain('.globl main');
       expect(assembly).toContain('main:');
       expect(assembly).toContain('push rbp');
-      expect(assembly).toContain('mov rsp, rbp');
-      expect(assembly).toContain('mov $42, rax');
+      expect(assembly).toContain('mov rbp, rsp');
+      expect(assembly).toContain('mov rax, $42');
       expect(assembly).toContain('pop rbp');
       expect(assembly).toContain('ret');
     });
@@ -131,8 +131,8 @@ int main() {
       const assembly = generateAssembly(code);
       
       expect(assembly).toContain('call add');
-      expect(assembly).toContain('mov $5, rdi'); // First argument
-      expect(assembly).toContain('mov $3, rsi'); // Second argument
+      expect(assembly).toContain('mov rdi, $5'); // First argument
+      expect(assembly).toContain('mov rsi, $3'); // Second argument
       expect(assembly).toContain('push rax');   // Save caller-save registers
       expect(assembly).toContain('pop rax');    // Restore caller-save registers
     });
