@@ -26,6 +26,21 @@ import { prettyPrintIR } from './codegen/IR';
 async function main() {
   const args = process.argv.slice(2);
   
+  if (args.includes('-v') || args.includes('-V') || args.includes('--version')) {
+    console.log(`
+   ____  ____  ______ __  __ _      ______ 
+  |  _ \\|_  _|/  ____|  |/  | |    |  ____|
+  | |_) | | | | |    | \\  / | |    | |__   
+  |  __/  | | | |    | |\\/| | |    |  __|  
+  | |    _| |_| \\____| |  | | |____| |____ 
+  |_|   |_____|\\_____|_|  |_|______|______|
+                                           
+  Pickle C Compiler (pcc) v1.1.0
+  A modern TypeScript-based C compiler for x86-64
+    `);
+    process.exit(0);
+  }
+
   if (args.length !== 1) {
     console.log('Usage: node dist/compile.js <source-file>');
     console.log('Example: node dist/compile.js examples/hello.c');
