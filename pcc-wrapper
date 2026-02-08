@@ -1,0 +1,68 @@
+#!/bin/bash
+# PCC wrapper script - mimics gcc interface
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PCC_LIB_DIR="$SCRIPT_DIR/../lib/pcc"
+
+# Parse gcc-like arguments
+SOURCE_FILE=""
+OUTPUT_FILE=""
+OUTPUT_FLAG=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -o)
+            OUTPUT_FLAG="$2"
+            shift 2
+            ;;
+        *.c)
+            SOURCE_FILE="$1"
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+if [ -z "$SOURCE_FILE" ]; then
+    echo "Usage: pcc <source-file.c> [-o output-file]"
+    echo "Example: pcc hello.c -o hello"
+    exit 1
+fi
+
+# Set output file
+if [ -n "$OUTPUT_FLAG" ]; then
+    OUTPUT_FILE="$OUTPUT_FLAG"
+else
+    OUTPUT_FILE="${SOURCE_FILE%.c}.o"
+fi
+
+# Run the compiler
+if [ -d "$PCC_LIB_DIR" ]; then
+    export NODE_PATH="$PCC_LIB_DIR:$NODE_PATH"
+    node "$PCC_LIB_DIR/compile.js" "$SOURCE_FILE" > /dev/null
+else
+    # Fallback to local development
+    node "$(dirname "$0")/../dist/compile.js" "$SOURCE_FILE" > /dev/null
+fi
+
+# Check if compilation succeeded
+if [ $? -eq 0 ]; then
+    # Link with system gcc to create executable
+    OBJECT_FILE="${SOURCE_FILE%.c}.o"
+    if [ -f "$OBJECT_FILE" ]; then
+        gcc "$OBJECT_FILE" -o "$OUTPUT_FILE" 2>/dev/null
+        if [ $? -eq 0 ]; then
+            echo "Compilation successful: $OUTPUT_FILE"
+        else
+            echo "Compilation successful (object file only): $OBJECT_FILE"
+        fi
+    else
+        echo "Compilation failed: no object file generated"
+        exit 1
+    fi
+else
+    echo "Compilation failed"
+    exit 1
+fi

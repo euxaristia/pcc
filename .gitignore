@@ -1,2 +1,7 @@
 linux-6.18/
 aports/
+dist/
+node_modules/
+*.o
+*.out
+pcc-dist.tar.gz
