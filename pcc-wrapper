@@ -11,6 +11,15 @@ OUTPUT_FLAG=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
+        -v|-V|--version)
+            # Run the compiler with version flag and exit
+            if [ -d "$PCC_LIB_DIR" ]; then
+                node "$PCC_LIB_DIR/compile.js" "$1"
+            else
+                node "$(dirname "$0")/dist/compile.js" "$1"
+            fi
+            exit 0
+            ;;
         -o)
             OUTPUT_FLAG="$2"
             shift 2
