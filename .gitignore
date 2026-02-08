@@ -1,4 +1,5 @@
 linux-6.18/
+xv6/
 aports/
 dist/
 node_modules/

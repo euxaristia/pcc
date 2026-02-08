@@ -270,6 +270,19 @@ int main() {
       const factorial = result.ir.functions.find(f => f.name === 'factorial');
       expect(factorial.body.length).toBeGreaterThan(2);
     });
+
+    it('should handle xv6-specific features like attributes and designated initializers', () => {
+      const code = `
+__attribute__((noreturn)) void mpmain(void);
+
+int main() {
+    int arr[2] = { [0] = 1, [1] = 2 };
+    return arr[0];
+}
+`;
+      const result = compile(code);
+      expect(result.success).toBe(true);
+    });
   });
 
   describe('Generated code quality', () => {

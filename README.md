@@ -250,21 +250,20 @@ npm test src/__tests__/integration.test.ts
 ### Supported C Subset
 - [x] Variable declarations
 - [x] Function definitions
-- [x] Control flow statements
-- [x] Arithmetic and logical expressions
-- [x] Type checking
-- [x] Global variables
-- [ ] Pointer operations
-- [ ] Arrays
-- [ ] Structs
-- [ ] Preprocessor
+- [x] Control flow statements (`if`, `while`, `for`, `do-while`, `switch`, `goto`)
+- [x] Arithmetic, logical, and bitwise expressions
+- [x] Type checking (including basic implicit conversion)
+- [x] Floating point support (`float`, `double`)
+- [x] Long integers (`long`)
+- [x] Basic `struct`, `union`, and `enum`
+- [x] Pointer operations
+- [ ] Preprocessor (rely on `gcc -E`)
+- [ ] Advanced C features (`__attribute__`, designated initializers)
 
-### Target Support
-- [x] x86-64 Linux
-- [ ] ARM
-- [ ] x86
-- [ ] macOS
-- [ ] Windows
+### Target Progress
+- **xv6-public Kernel**: ~60% capability
+- **Standard C99**: ~85% capability
+- **Linux Kernel 6.18**: ~20% capability (Long-term goal)
 
 ### Quality Metrics
 - **Code Coverage**: 100%

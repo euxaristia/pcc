@@ -6,7 +6,8 @@ import {
   TernaryExpressionNode, FunctionCallNode, IdentifierNode, NumberLiteralNode,
   StringLiteralNode, CharacterLiteralNode, NodeType, ExpressionNode, StatementNode,
   TypeSpecifierNode, SizeofExpressionNode, CastExpressionNode, MemberAccessNode,
-  ArrayAccessNode, EnumDeclarationNode, UnionDeclarationNode
+  ArrayAccessNode, EnumDeclarationNode, UnionDeclarationNode, AttributeNode,
+  InitializerListNode
 } from '../parser/Parser';
 import { DataType } from '../semantic/SymbolTable';
 import {
@@ -97,6 +98,9 @@ export class IRGenerator {
   }
 
   private processFunctionDeclaration(funcDecl: FunctionDeclarationNode): void {
+    if (!funcDecl.body) {
+      return;
+    }
     const returnType = this.dataTypeToIRType(this.parseType(funcDecl.returnType));
     const parameters = funcDecl.parameters.map(param => ({
       name: param.name,
@@ -192,6 +196,15 @@ export class IRGenerator {
 
       case NodeType.COMPOUND_STATEMENT:
         this.processCompoundStatement(stmt as any);
+        break;
+
+      case NodeType.ATTRIBUTE_STMT:
+        // Ignore attributes for now
+        break;
+
+      case NodeType.INITIALIZER_LIST:
+        // Handle as expression
+        this.processExpression(stmt as any);
         break;
     }
   }
@@ -560,6 +573,11 @@ export class IRGenerator {
 
       case NodeType.ARRAY_ACCESS:
         return this.processArrayAccess(expr as ArrayAccessNode);
+
+      case NodeType.INITIALIZER_LIST:
+        // For now, return a dummy constant
+        // In a full implementation, we'd handle array/struct initialization
+        return createConstant(0, IRType.I32);
 
       default:
         const never: never = expr;

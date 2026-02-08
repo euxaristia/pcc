@@ -35,6 +35,7 @@ export enum NodeType {
   
   // Types
   TYPE_SPECIFIER = 'TYPE_SPECIFIER',
+  INITIALIZER_LIST = 'INITIALIZER_LIST',
   
   // Declarations
   ENUM_DECLARATION = 'ENUM_DECLARATION',
@@ -103,6 +104,7 @@ export interface TypeSpecifierNode extends ASTNode {
   isPointer: boolean;
   pointerCount: number;
   qualifiers: ('const' | 'volatile' | 'restrict')[];
+  params?: ParameterNode[]; // For function pointers
 }
 
 export interface CompoundStatementNode extends ASTNode {
@@ -272,6 +274,17 @@ export interface MemberAccessNode extends ASTNode {
   member: string;
 }
 
+export interface InitializerListNode extends ASTNode {
+  type: NodeType.INITIALIZER_LIST;
+  initializers: InitializerNode[];
+}
+
+export interface InitializerNode extends ASTNode {
+  type: NodeType.INITIALIZER_LIST;
+  designator?: string | ExpressionNode;
+  value: ExpressionNode;
+}
+
 export interface TernaryExpressionNode extends ASTNode {
   type: NodeType.TERNARY_EXPRESSION;
   condition: ExpressionNode;
@@ -326,7 +339,8 @@ export type ExpressionNode =
   | CastExpressionNode
   | ArrayAccessNode
   | MemberAccessNode
-  | TernaryExpressionNode;
+  | TernaryExpressionNode
+  | InitializerListNode;
 
 export type StatementNode = 
   | DeclarationNode
@@ -351,7 +365,8 @@ export type StatementNode =
   | BreakStatementNode
   | ContinueStatementNode
   | EnumDeclarationNode
-  | UnionDeclarationNode;
+  | UnionDeclarationNode
+  | InitializerListNode;
 
 export class Parser {
   private tokens: Token[];
@@ -421,8 +436,8 @@ export class Parser {
         continue;
       }
       
-      // Skip EXPORT_SYMBOL and other kernel directives
-      if (this.check(TokenType.EXPORT_SYMBOL) || this.check(TokenType.ASM)) {
+      // Attributes and other kernel directives
+      if (this.check(TokenType.EXPORT_SYMBOL) || this.check(TokenType.ASM) || this.check(TokenType.ATTRIBUTE)) {
         const statement = this.parseStatement();
         if (statement) {
           declarations.push(statement as any);
@@ -696,7 +711,7 @@ export class Parser {
     }
     
     if (this.match(TokenType.ASSIGN)) {
-      initializer = this.parseExpression();
+      initializer = this.parseInitializer();
     }
     
     this.consume(TokenType.SEMICOLON, 'Expected \';\' after variable declaration');
@@ -708,6 +723,63 @@ export class Parser {
       initializer,
       line: varType.line,
       column: varType.column,
+    };
+  }
+
+  private parseInitializer(): ExpressionNode {
+    if (this.check(TokenType.LEFT_BRACE)) {
+      return this.parseInitializerList();
+    }
+    return this.parseAssignment();
+  }
+
+  private parseInitializerList(): InitializerListNode {
+    const line = this.peek().line;
+    const column = this.peek().column;
+    this.consume(TokenType.LEFT_BRACE, "Expected '{' to start initializer list");
+    
+    const initializers: InitializerNode[] = [];
+    
+    if (!this.check(TokenType.RIGHT_BRACE)) {
+      do {
+        while (this.check(TokenType.NEWLINE)) this.advance();
+        if (this.check(TokenType.RIGHT_BRACE)) break;
+
+        let designator: string | ExpressionNode | undefined;
+        
+        // Handle designated initializers
+        if (this.match(TokenType.DOT)) {
+          // .member = value
+          designator = this.consume(TokenType.IDENTIFIER, "Expected member name after '.'").value;
+          this.consume(TokenType.ASSIGN, "Expected '=' after designator");
+        } else if (this.match(TokenType.LEFT_BRACKET)) {
+          // [index] = value
+          designator = this.parseExpression();
+          this.consume(TokenType.RIGHT_BRACKET, "Expected ']' after index");
+          this.consume(TokenType.ASSIGN, "Expected '=' after designator");
+        }
+        
+        const value = this.parseInitializer();
+        initializers.push({
+          type: NodeType.INITIALIZER_LIST,
+          designator,
+          value,
+          line: value.line,
+          column: value.column,
+        });
+        
+        while (this.check(TokenType.NEWLINE)) this.advance();
+      } while (this.match(TokenType.COMMA));
+    }
+    
+    while (this.check(TokenType.NEWLINE)) this.advance();
+    this.consume(TokenType.RIGHT_BRACE, "Expected '}' after initializer list");
+    
+    return {
+      type: NodeType.INITIALIZER_LIST,
+      initializers,
+      line,
+      column,
     };
   }
 
@@ -847,8 +919,12 @@ export class Parser {
     
     // Attributes like __init - skip for now and let next declaration handle it
     if (this.match(TokenType.INIT)) {
-      // Skip __init attribute and let the next function declaration handle it
-      // This is a simplified approach
+      return this.parseStatement();
+    }
+    
+    // GCC Attributes
+    if (this.match(TokenType.ATTRIBUTE)) {
+      return this.parseAttribute();
     }
     
     // Preprocessor directives
@@ -1652,17 +1728,36 @@ export class Parser {
   }
 
   private parseAttribute(): AttributeNode {
-    const attribute = this.previous().value;
+    const attributeToken = this.previous();
+    let attributeContent = attributeToken.value;
     
-    // For now, we'll just consume the next function declaration
-    // In a full implementation, we'd associate this with the following declaration
-    this.consume(TokenType.SEMICOLON, 'Expected \';\' after attribute');
+    // GCC attributes use __attribute__((...))
+    if (this.match(TokenType.LEFT_PAREN)) {
+      attributeContent += '(';
+      let parenCount = 1;
+      while (parenCount > 0 && !this.isAtEnd()) {
+        if (this.match(TokenType.LEFT_PAREN)) {
+          parenCount++;
+          attributeContent += '(';
+        } else if (this.match(TokenType.RIGHT_PAREN)) {
+          parenCount--;
+          attributeContent += ')';
+        } else {
+          attributeContent += this.advance().value;
+        }
+      }
+    }
+    
+    // Attributes might be followed by a semicolon or might be part of a declaration
+    if (this.check(TokenType.SEMICOLON)) {
+      this.advance();
+    }
     
     return {
       type: NodeType.ATTRIBUTE_STMT,
-      attribute,
-      line: this.previous().line,
-      column: this.previous().column,
+      attribute: attributeContent,
+      line: attributeToken.line,
+      column: attributeToken.column,
     };
   }
 

@@ -54,6 +54,8 @@ export class SemanticAnalyzer {
         this.analyzeFunctionDeclaration(declaration as FunctionDeclarationNode);
       } else if (declaration.type === NodeType.DECLARATION) {
         this.analyzeVariableDeclaration(declaration as DeclarationNode);
+      } else if (declaration.type === NodeType.ATTRIBUTE_STMT) {
+        // Skip attributes
       }
     }
   }
@@ -123,8 +125,10 @@ export class SemanticAnalyzer {
       }
     }
 
-    // Analyze function body
-    this.analyzeCompoundStatement(node.body);
+    // Analyze function body if present
+    if (node.body) {
+      this.analyzeCompoundStatement(node.body);
+    }
 
     this.symbolTable.exitScope(); // Exit function scope
     this.currentFunction = null;
@@ -405,6 +409,9 @@ export class SemanticAnalyzer {
       case NodeType.ARRAY_ACCESS:
         // For now, return int type for array access
         // A full implementation would look up the array element type
+        return { type: BuiltinTypes.INT, isError: false };
+
+      case NodeType.INITIALIZER_LIST:
         return { type: BuiltinTypes.INT, isError: false };
 
       default:
