@@ -1,0 +1,1 @@
+void (*local_ptr)(void) = func_ptr;

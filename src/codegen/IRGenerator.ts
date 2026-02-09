@@ -554,16 +554,24 @@ export class IRGenerator {
     if (!this.context.currentBlock) {
       throw new Error('Asm statement outside block');
     }
-
+    
+    // Parse the assembly statement to extract constraints and improve codegen
+    const assembly = asm.assembly;
+    const isVolatile = asm.isVolatile;
+    
+    // Create a basic ASM instruction for now
+    // In a full implementation, we'd parse the assembly template
+    // and map constraints to specific registers
     const instr = createInstruction(
       this.genId(),
       IROpCode.ASM,
       IRType.VOID,
       []
     );
+    
     instr.metadata = {
-      assembly: asm.assembly,
-      isVolatile: asm.isVolatile,
+      assembly: assembly,
+      isVolatile: isVolatile,
     };
     this.context.currentBlock.instructions.push(instr);
   }

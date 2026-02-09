@@ -1,0 +1,1 @@
+int (*func_ptr2)(int, char);
