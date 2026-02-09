@@ -528,6 +528,7 @@ export class Parser {
     const name = nameToken.value;
     
     if (this.check(TokenType.LEFT_PAREN)) {
+      
       return this.parseFunctionDeclaration(typeSpecifier, name, storageClasses.join(' '));
     } else {
       return this.parseVariableDeclaration(typeSpecifier, name, storageClasses.join(' '));
@@ -662,6 +663,47 @@ export class Parser {
       pointerCount++;
     }
     
+// Check for function pointer syntax: int(*)(void) or int(*)()
+    if (this.check(TokenType.LEFT_PAREN)) {
+      
+      // Save current position
+      const savedPos = this.current;
+      
+      // Try to parse function pointer: return_type (*) (param_list)
+      this.advance(); // consume '('
+      
+      if (this.match(TokenType.MULTIPLY)) {
+        // Found (*) pattern, this is a function pointer
+        this.consume(TokenType.RIGHT_PAREN, "Expected ')' after * in function pointer");
+        
+        // Parse parameter list - for now, just handle empty parameter list (void)
+        this.consume(TokenType.LEFT_PAREN, "Expected '(' after function pointer");
+        if (this.check(TokenType.VOID)) {
+          this.advance(); // consume 'void'
+        } else if (!this.check(TokenType.RIGHT_PAREN)) {
+          // Parse parameters for real
+          const params = this.parseParameters();
+        }
+        this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer parameters");
+        
+        // Build function pointer type name
+        typeName = `${typeName}(*)()`;
+        
+        return {
+          type: NodeType.TYPE_SPECIFIER,
+          typeName,
+          isPointer: true, // Function pointers are always pointers
+          pointerCount: 1,
+          qualifiers,
+          line: token.line,
+          column: token.column,
+        };
+      } else {
+        // Not a function pointer, backtrack
+        this.current = savedPos;
+      }
+    }
+    
     return {
       type: NodeType.TYPE_SPECIFIER,
       typeName,
@@ -703,10 +745,12 @@ export class Parser {
   }
 
   private parseParameters(): ParameterNode[] {
+    
     const parameters: ParameterNode[] = [];
     
     if (!this.check(TokenType.RIGHT_PAREN)) {
       do {
+        // Handle ellipsis - check for both ELLIPSIS token and DOT followed by more dots
         if (this.match(TokenType.ELLIPSIS)) {
           parameters.push({
             type: NodeType.PARAMETER,
@@ -725,8 +769,42 @@ export class Parser {
           });
           break;
         }
+        
+        // Handle case where lexer produces DOT instead of ELLIPSIS
+        if (this.check(TokenType.DOT)) {
+          // Check if this is actually an ellipsis by looking at the token stream
+          const tokens = [];
+          let i = 0;
+          while (i < 3 && this.check(TokenType.DOT)) {
+            tokens.push(this.advance());
+            i++;
+          }
+          if (i === 3) {
+            // We found three dots, treat as ellipsis
+            parameters.push({
+              type: NodeType.PARAMETER,
+              varType: { 
+                type: NodeType.TYPE_SPECIFIER,
+                typeName: '...', 
+                isPointer: false, 
+                pointerCount: 0, 
+                qualifiers: [],
+                line: tokens[0].line, 
+                column: tokens[0].column 
+              },
+              name: '...',
+              line: tokens[0].line,
+              column: tokens[0].column,
+            });
+            break;
+          } else {
+            // Not an ellipsis, put tokens back and handle as error
+            this.current -= i; // Put tokens back
+          }
+        }
 
         const paramType = this.parseTypeSpecifier();
+        
         
         // Handle void parameter (int func(void))
         if (paramType.typeName === 'void' && !paramType.isPointer) {
@@ -1950,6 +2028,18 @@ export class Parser {
     const content = this.previous().value;
     const parts = content.split(/\s+/);
     const directive = parts[0];
+    
+    // Handle include directives
+    if (directive === '#include') {
+      // For now, just ignore includes - the headers should be preprocessed by gcc when needed
+      return {
+        type: NodeType.PREPROCESSOR_STMT,
+        directive,
+        content: content.substring(1),
+        line: this.previous().line,
+        column: this.previous().column,
+      };
+    }
     
     // Handle conditional directives
     if (directive === '#if') {
