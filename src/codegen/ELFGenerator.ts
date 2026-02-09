@@ -1,6 +1,7 @@
 import { AssemblyProgram, AssemblySection } from './AssemblyGenerator';
 
 export interface ELFHeader {
+export interface Section {
   magic: number[];
   class_: number;  // 1 = 32-bit, 2 = 64-bit
   data: number;    // 1 = little endian, 2 = big endian
@@ -23,7 +24,7 @@ export interface ELFHeader {
   shstrndx: number;
 }
 
-export interface Section {
+
   name: string;
   type: number;
   flags: number;
