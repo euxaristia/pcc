@@ -47,6 +47,11 @@ export class TypeChecker {
         return { type: left, isError: false };
       }
 
+      // Allow assignment of functions to function pointers
+      if (left.isPointer && !right.isPointer && right.baseType === BaseType.VOID) {
+        return { type: left, isError: false };
+      }
+
       // Allow assignment of 0 to any pointer (null pointer)
       if (left.isPointer && right.baseType === BaseType.INT && !right.isPointer) {
         return { type: left, isError: false };

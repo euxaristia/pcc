@@ -572,12 +572,23 @@ export class SemanticAnalyzer {
       switch (typeNode.typeName) {
         case 'int': baseType = BaseType.INT; break;
         case 'char': baseType = BaseType.CHAR; break;
+        case 'unsigned char': baseType = BaseType.CHAR; break;
+        case 'unsigned int': baseType = BaseType.INT; break;
+        case 'unsigned short': baseType = BaseType.INT; break;
+        case 'unsigned long': baseType = BaseType.LONG; break;
         case 'long': baseType = BaseType.LONG; break;
         case 'float': baseType = BaseType.FLOAT; break;
         case 'double': baseType = BaseType.DOUBLE; break;
         case 'void': baseType = BaseType.VOID; break;
         case '...': baseType = BaseType.INT; break; // Treat ellipsis as int for now
-        default: baseType = BaseType.INT; // Fallback
+        default: 
+          // Check if this is a function pointer type (contains parentheses and asterisks)
+          if (typeNode.typeName.includes('(*)') || typeNode.typeName.includes('(**)')) {
+            baseType = BaseType.VOID; // Treat function pointers as void pointers
+          } else {
+            baseType = BaseType.INT; // Fallback
+          }
+          break;
       }
     }
 

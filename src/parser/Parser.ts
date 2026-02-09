@@ -397,6 +397,63 @@ export class Parser {
 
   constructor(tokens: Token[]) {
     this.tokens = tokens;
+    
+    // Initialize common kernel typedefs for xv6 compatibility
+    this.initializeKernelTypedefs();
+  }
+
+  private initializeKernelTypedefs(): void {
+    // Common xv6/kernel types
+    this.typedefs.set('uchar', {
+      type: NodeType.TYPE_SPECIFIER,
+      typeName: 'unsigned char',
+      isPointer: false,
+      pointerCount: 0,
+      qualifiers: [],
+      line: 0,
+      column: 0,
+    });
+    
+    this.typedefs.set('uint', {
+      type: NodeType.TYPE_SPECIFIER,
+      typeName: 'unsigned int',
+      isPointer: false,
+      pointerCount: 0,
+      qualifiers: [],
+      line: 0,
+      column: 0,
+    });
+    
+    this.typedefs.set('ushort', {
+      type: NodeType.TYPE_SPECIFIER,
+      typeName: 'unsigned short',
+      isPointer: false,
+      pointerCount: 0,
+      qualifiers: [],
+      line: 0,
+      column: 0,
+    });
+    
+    this.typedefs.set('ulong', {
+      type: NodeType.TYPE_SPECIFIER,
+      typeName: 'unsigned long',
+      isPointer: false,
+      pointerCount: 0,
+      qualifiers: [],
+      line: 0,
+      column: 0,
+    });
+    
+    // Add other common kernel types as needed
+    this.typedefs.set('pde_t', {
+      type: NodeType.TYPE_SPECIFIER,
+      typeName: 'unsigned long',
+      isPointer: true,
+      pointerCount: 1,
+      qualifiers: [],
+      line: 0,
+      column: 0,
+    });
   }
 
   private peek(offset: number = 0): Token {
@@ -459,8 +516,18 @@ export class Parser {
         continue;
       }
       
+      // Handle attributes that can appear before declarations
+      if (this.check(TokenType.ATTRIBUTE)) {
+        // This could be an attribute before a declaration, so try to parse as declaration
+        const declaration = this.parseDeclaration();
+        if (declaration) {
+          declarations.push(declaration);
+        }
+        continue;
+      }
+      
       // Attributes and other kernel directives
-      if (this.check(TokenType.EXPORT_SYMBOL) || this.check(TokenType.ASM) || this.check(TokenType.ATTRIBUTE) || this.check(TokenType.TYPEDEF) || this.check(TokenType.ENUM) || this.check(TokenType.PREPROCESSOR)) {
+      if (this.check(TokenType.EXPORT_SYMBOL) || this.check(TokenType.ASM) || this.check(TokenType.TYPEDEF) || this.check(TokenType.ENUM) || this.check(TokenType.PREPROCESSOR)) {
         const statement = this.parseStatement();
         if (statement) {
           declarations.push(statement as any);
@@ -523,15 +590,174 @@ export class Parser {
   }
 
   private parseDeclaration(): FunctionDeclarationNode | DeclarationNode | MultiDeclarationNode | null {
+    // Handle attributes that can appear before declarations (e.g., __attribute__((aligned(...))))
+    while (this.match(TokenType.ATTRIBUTE)) {
+      this.parseAttributeInDeclaration(); // Parse and ignore the attribute for now
+    }
+    
     // Handle storage class specifiers
     const storageClasses: string[] = [];
     while (this.match(TokenType.EXTERN, TokenType.STATIC, TokenType.INLINE)) {
       storageClasses.push(this.previous().value);
     }
     
+    console.log(`parseDeclaration: next token after storage classes: ${this.peek().type} ${this.peek().value}`);
     const typeSpecifier = this.parseTypeSpecifier();
     
     // Check if we have an identifier (might be an anonymous struct/union/enum if followed by ;)
+    if (!this.check(TokenType.IDENTIFIER)) {
+      if (this.check(TokenType.SEMICOLON)) {
+        this.advance();
+        return null; // Empty declaration (e.g., struct foo { ... };)
+      }
+    }
+
+
+    
+    // Check for function pointer declarator: type (*name)(params) or type (*name)(params) = initializer
+    if (this.check(TokenType.LEFT_PAREN)) {
+      const savedPos = this.current;
+      this.advance(); // consume '('
+      
+      if (this.match(TokenType.MULTIPLY)) {
+        // This is a function pointer declarator
+        // Handle multiple asterisks
+        let pointerStars = '*';
+        while (this.match(TokenType.MULTIPLY)) {
+          pointerStars += '*';
+        }
+        
+        // Consume the identifier name
+        const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected identifier in function pointer declarator');
+        const name = nameToken.value;
+        
+        this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer name");
+        
+        // Parse parameter list
+        this.consume(TokenType.LEFT_PAREN, "Expected '(' after function pointer");
+        if (this.check(TokenType.VOID)) {
+          this.advance(); // consume 'void'
+        } else if (!this.check(TokenType.RIGHT_PAREN)) {
+          // Parse parameters for real
+          const params = this.parseParameters();
+        }
+        this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer parameters");
+        
+        // Handle array declarations for function pointers (rare)
+        let arraySize: ExpressionNode | undefined;
+        if (this.match(TokenType.LEFT_BRACKET)) {
+          if (!this.check(TokenType.RIGHT_BRACKET)) {
+            arraySize = this.parseExpression();
+          }
+          this.consume(TokenType.RIGHT_BRACKET, "Expected ']' after array size");
+        }
+        
+        let initializer: ExpressionNode | undefined;
+        if (this.match(TokenType.ASSIGN)) {
+          initializer = this.parseInitializer();
+        }
+
+        this.consume(TokenType.SEMICOLON, "Expected ';' after declaration");
+        
+        // Create declaration node with function pointer type
+        const declaration: DeclarationNode = {
+          type: NodeType.DECLARATION,
+          varType: {
+            type: NodeType.TYPE_SPECIFIER,
+            typeName: `${typeSpecifier.typeName}(${pointerStars})()`,
+            isPointer: true,
+            pointerCount: pointerStars.length + (arraySize ? 1 : 0),
+            qualifiers: typeSpecifier.qualifiers || [],
+            line: typeSpecifier.line,
+            column: typeSpecifier.column,
+          },
+          name,
+          initializer,
+          storageClass: storageClasses.join(' ') as any,
+          line: typeSpecifier.line,
+          column: typeSpecifier.column,
+        };
+        
+        console.log(`Function pointer declaration: ${name}, next token: ${this.peek().type} ${this.peek().value}`);
+        return declaration;
+      } else {
+        // Not a function pointer, backtrack and try normal identifier
+        this.current = savedPos;
+      }
+    }
+    
+    // Check for function pointer declarator: type (*name)(params) or just (*name)(params)
+    if (this.check(TokenType.LEFT_PAREN)) {
+      const savedPos = this.current;
+      this.advance(); // consume '('
+      
+      if (this.match(TokenType.MULTIPLY)) {
+        // This is a function pointer declarator
+        // Handle multiple asterisks
+        let pointerStars = '*';
+        while (this.match(TokenType.MULTIPLY)) {
+          pointerStars += '*';
+        }
+        
+        // Consume the identifier name
+        const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected identifier in function pointer declarator');
+        const name = nameToken.value;
+        
+        this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer name");
+        
+        // Parse parameter list
+        this.consume(TokenType.LEFT_PAREN, "Expected '(' after function pointer");
+        if (this.check(TokenType.VOID)) {
+          this.advance(); // consume 'void'
+        } else if (!this.check(TokenType.RIGHT_PAREN)) {
+          // Parse parameters for real
+          const params = this.parseParameters();
+        }
+        this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer parameters");
+        
+        // Handle array declarations for function pointers (rare)
+        let arraySize: ExpressionNode | undefined;
+        if (this.match(TokenType.LEFT_BRACKET)) {
+          if (!this.check(TokenType.RIGHT_BRACKET)) {
+            arraySize = this.parseExpression();
+          }
+          this.consume(TokenType.RIGHT_BRACKET, "Expected ']' after array size");
+        }
+        
+        let initializer: ExpressionNode | undefined;
+        if (this.match(TokenType.ASSIGN)) {
+          initializer = this.parseInitializer();
+        }
+
+        this.consume(TokenType.SEMICOLON, "Expected ';' after declaration");
+        
+        // Create declaration node with function pointer type
+        const declaration: DeclarationNode = {
+          type: NodeType.DECLARATION,
+          varType: {
+            type: NodeType.TYPE_SPECIFIER,
+            typeName: `${typeSpecifier.typeName}(${pointerStars})()`,
+            isPointer: true,
+            pointerCount: pointerStars.length + (arraySize ? 1 : 0),
+            qualifiers: typeSpecifier.qualifiers || [],
+            line: typeSpecifier.line,
+            column: typeSpecifier.column,
+          },
+          name,
+          initializer,
+          storageClass: storageClasses.join(' ') as any,
+          line: typeSpecifier.line,
+          column: typeSpecifier.column,
+        };
+        
+        console.log(`Function pointer declaration: ${name}, next token: ${this.peek().type} ${this.peek().value}`);
+        return declaration;
+      } else {
+        // Not a function pointer, backtrack and try normal identifier
+        this.current = savedPos;
+      }
+    }
+    
     if (!this.check(TokenType.IDENTIFIER)) {
       if (this.check(TokenType.SEMICOLON)) {
         this.advance();
@@ -714,43 +940,40 @@ if (this.check(TokenType.INT) || this.check(TokenType.CHAR) ||
       pointerCount++;
     }
     
-// Check for function pointer syntax: int(*)(void) or int(*)()
+    // For casts, support basic function pointer types like void(*)(void) or void(**)(void)
     if (this.check(TokenType.LEFT_PAREN)) {
-      
-      // Save current position
       const savedPos = this.current;
-      
-      // Try to parse function pointer: return_type (*) (param_list)
       this.advance(); // consume '('
       
-      if (this.match(TokenType.MULTIPLY)) {
-        // Found (*) pattern, this is a function pointer
-        this.consume(TokenType.RIGHT_PAREN, "Expected ')' after * in function pointer");
-        
-        // Parse parameter list - for now, just handle empty parameter list (void)
-        this.consume(TokenType.LEFT_PAREN, "Expected '(' after function pointer");
-        if (this.check(TokenType.VOID)) {
-          this.advance(); // consume 'void'
-        } else if (!this.check(TokenType.RIGHT_PAREN)) {
-          // Parse parameters for real
-          const params = this.parseParameters();
+        if (this.match(TokenType.MULTIPLY)) {
+        // Function pointer type for casts
+        let pointerStars = '*';
+        while (this.match(TokenType.MULTIPLY)) {
+          pointerStars += '*';
         }
-        this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer parameters");
         
-        // Build function pointer type name
-        typeName = `${typeName}(*)()`;
-        
-        return {
-          type: NodeType.TYPE_SPECIFIER,
-          typeName,
-          isPointer: true, // Function pointers are always pointers
-          pointerCount: 1,
-          qualifiers,
-          line: token.line,
-          column: token.column,
-        };
+        // For casts like void(*)(void), there might not be an identifier next
+        if (this.check(TokenType.IDENTIFIER)) {
+          // This is likely a declaration like void (*func)(void), not a cast
+          this.current = savedPos;
+        } else {
+          this.consume(TokenType.RIGHT_PAREN, "Expected ')' after * in function pointer type");
+          
+          // Parse parameter list for function pointer type
+          this.consume(TokenType.LEFT_PAREN, "Expected '(' after function pointer type");
+          if (this.check(TokenType.VOID)) {
+            this.advance(); // consume 'void'
+          } else if (!this.check(TokenType.RIGHT_PAREN)) {
+            // Parse parameters for real
+            const params = this.parseParameters();
+          }
+          this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer type parameters");
+          
+          // Build function pointer type name for casts
+          typeName = `${typeName}(${pointerStars})()`;
+        }
       } else {
-        // Not a function pointer, backtrack
+        // Not a function pointer type, backtrack
         this.current = savedPos;
       }
     }

@@ -845,6 +845,14 @@ export class IRGenerator {
   }
 
   private processIdentifier(ident: IdentifierNode): IRValue {
+    // Check if it's a function first (functions decay to function pointers)
+    const func = this.module.functions.find(f => f.name === ident.name);
+    if (func) {
+      // In C, function names decay to function pointers
+      // Return the function address as a constant value
+      return createValue(ident.name, IRType.I32); // Function addresses are pointers
+    }
+    
     // Check if it's a global variable
     const global = this.module.globals.find(g => g.name === ident.name);
     if (global) {
