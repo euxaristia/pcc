@@ -20,8 +20,8 @@ export class X8664AssemblyGenerator {
   private instructionSelector: InstructionSelector;
   private assemblyProgram: AssemblyProgram;
 
-  constructor() {
-    this.instructionSelector = new InstructionSelector(X8664CallingConvention);
+  constructor(callingConvention?: CallingConvention = X8664CallingConvention) {
+    this.instructionSelector = new InstructionSelector(callingConvention || X8664CallingConvention);
     this.assemblyProgram = {
       sections: [],
       globals: [],
