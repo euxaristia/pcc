@@ -820,24 +820,53 @@ export class Parser {
             continue;
           }
           
-          // Parse member declaration
-if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || 
-          this.check(TokenType.VOID) || this.check(TokenType.STRUCT) || this.check(TokenType.ENUM) ||
-          this.check(TokenType.LONG) || this.check(TokenType.SHORT) ||
-          this.check(TokenType.UNSIGNED) || this.check(TokenType.SIGNED) ||
-          this.check(TokenType.FLOAT) || this.check(TokenType.DOUBLE) ||
-          this.check(TokenType.STATIC) || this.check(TokenType.EXTERN) || this.check(TokenType.INLINE) ||
-          this.check(TokenType.CONST) || this.check(TokenType.VOLATILE) || this.check(TokenType.RESTRICT) ||
-          (this.check(TokenType.IDENTIFIER) && this.typedefs.has(this.peek().value))) {
-            const memberType = this.parseTypeSpecifier();
-            const memberName = this.consume(TokenType.IDENTIFIER, 'Expected member name');
-            
-            // Handle bit fields
-            if (this.match(TokenType.COLON)) {
-              // Parse bit width (must be integer constant)
-              const bitWidth = this.parseExpression();
-              // For now, just ignore the bit width and continue
-            }
+            // Parse member declaration
+            if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || 
+                this.check(TokenType.VOID) || this.check(TokenType.STRUCT) || this.check(TokenType.ENUM) ||
+                this.check(TokenType.LONG) || this.check(TokenType.SHORT) ||
+                this.check(TokenType.UNSIGNED) || this.check(TokenType.SIGNED) ||
+                this.check(TokenType.FLOAT) || this.check(TokenType.DOUBLE) ||
+                this.check(TokenType.STATIC) || this.check(TokenType.EXTERN) || this.check(TokenType.INLINE) ||
+                this.check(TokenType.CONST) || this.check(TokenType.VOLATILE) || this.check(TokenType.RESTRICT) ||
+                (this.check(TokenType.IDENTIFIER) && this.typedefs.has(this.peek().value))) {
+              const memberType = this.parseTypeSpecifier();
+              
+              const memberName = this.consume(TokenType.IDENTIFIER, 'Expected member name');
+              members.push({
+                type: NodeType.DECLARATION,
+                varType: memberType,
+                name: memberName,
+                line: memberType.line,
+                column: memberType.column,
+              });
+              
+              // Handle array declarators and bit fields
+              if (this.match(TokenType.LEFT_BRACKET)) {
+                if (!this.check(TokenType.RIGHT_BRACKET)) {
+                  this.parseExpression();
+                }
+                this.consume(TokenType.RIGHT_BRACKET, "Expected ']' after array size");
+              }
+              
+              if (this.match(TokenType.COLON)) {
+                this.parseExpression();
+              }
+              
+              this.consume(TokenType.SEMICOLON, "Expected ';' after member declaration");
+              continue;
+            } else if (this.check(TokenType.STRUCT)) {
+              // For now, just skip anonymous struct definitions to avoid parse errors
+              if (this.check(TokenType.IDENTIFIER) && this.check(TokenType.LEFT_BRACE)) {
+                // Skip entire anonymous struct: struct { ... }
+                let braceCount = 1;
+                this.advance(); // consume identifier
+                while (braceCount > 0 && !this.isAtEnd()) {
+                  if (this.match(TokenType.LEFT_BRACE)) braceCount++;
+                  else if (this.match(TokenType.RIGHT_BRACE)) braceCount--;
+                  else this.advance();
+                }
+                continue;
+              }
             
             // Handle array members
             if (this.match(TokenType.LEFT_BRACKET)) {
