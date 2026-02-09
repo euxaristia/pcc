@@ -768,6 +768,51 @@ export class Parser {
     const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected identifier after type');
     const name = nameToken.value;
     
+    // Check for function pointer array declarations like void (*func_ptr_array[4])
+    if (this.check(TokenType.LEFT_PAREN)) {
+      const savedPos = this.current;
+      this.advance(); // consume '('
+      
+      // Check if this is a function pointer array: type (*name[size])
+      if (this.match(TokenType.MULTIPLY)) {
+        // This is a function pointer or function pointer array
+        this.consume(TokenType.RIGHT_PAREN); // consume ')'
+        
+        // Now check if we have an array after the function pointer
+        if (this.match(TokenType.LEFT_BRACKET)) {
+          // Parse array size
+          if (!this.check(TokenType.RIGHT_BRACKET)) {
+            this.parseExpression();
+          }
+          this.consume(TokenType.RIGHT_BRACKET, "Expected ']' after array size");
+          
+          // Function pointer array declaration
+          this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer array");
+          this.consume(TokenType.SEMICOLON, "Expected ';' after function pointer array declaration");
+          
+          return {
+            type: NodeType.DECLARATION,
+            varType: {
+              type: NodeType.TYPE_SPECIFIER,
+              typeName: `${typeSpecifier.typeName}(*)`, // Function pointer array
+              isPointer: true,
+              pointerCount: 1,
+              qualifiers: typeSpecifier.qualifiers || [],
+              line: typeSpecifier.line,
+              column: typeSpecifier.column,
+            },
+            name,
+            storageClass: storageClasses.join(' ') as any,
+            line: typeSpecifier.line,
+            column: typeSpecifier.column,
+          };
+        }
+        
+        // Not a function pointer array, backtrack and parse normally
+        this.current = savedPos;
+      }
+    }
+    
     if (this.check(TokenType.LEFT_PAREN)) {
       
       return this.parseFunctionDeclaration(typeSpecifier, name, storageClasses.join(' '));
