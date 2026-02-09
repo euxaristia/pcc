@@ -460,7 +460,7 @@ export class Parser {
       }
       
       // Attributes and other kernel directives
-      if (this.check(TokenType.EXPORT_SYMBOL) || this.check(TokenType.ASM) || this.check(TokenType.ATTRIBUTE) || this.check(TokenType.TYPEDEF) || this.check(TokenType.PREPROCESSOR)) {
+      if (this.check(TokenType.EXPORT_SYMBOL) || this.check(TokenType.ASM) || this.check(TokenType.ATTRIBUTE) || this.check(TokenType.TYPEDEF) || this.check(TokenType.ENUM) || this.check(TokenType.PREPROCESSOR)) {
         const statement = this.parseStatement();
         if (statement) {
           declarations.push(statement as any);
@@ -474,7 +474,7 @@ export class Parser {
           this.check(TokenType.STATIC) || this.check(TokenType.EXTERN) || this.check(TokenType.INLINE) ||
           this.check(TokenType.CONST) || this.check(TokenType.VOLATILE) || this.check(TokenType.RESTRICT) ||
           (this.check(TokenType.IDENTIFIER) && this.typedefs.has(this.peek().value))) {
-        // Special handling for struct definitions
+        // Special handling for struct/enum definitions
         if (this.check(TokenType.STRUCT)) {
           const savedPosition = this.current;
           this.advance(); // consume 'struct'
@@ -489,6 +489,21 @@ export class Parser {
             }
           }
           // Not a struct definition, backtrack
+          this.current = savedPosition;
+        } else if (this.check(TokenType.ENUM)) {
+          const savedPosition = this.current;
+          this.advance(); // consume 'enum'
+          if (this.check(TokenType.IDENTIFIER)) {
+            this.advance(); // consume enum name
+            if (this.check(TokenType.LEFT_BRACE)) {
+              // This is an enum definition, not a variable declaration
+              // Backtrack and parse as type specifier
+              this.current = savedPosition;
+              this.parseTypeSpecifier();
+              continue; // Skip to next iteration, enum definition handled
+            }
+          }
+          // Not an enum definition, backtrack
           this.current = savedPosition;
         }
         
@@ -580,14 +595,23 @@ export class Parser {
           }
           
           // Parse member declaration
-          if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || 
-              this.check(TokenType.VOID) || this.check(TokenType.STRUCT) ||
-              this.check(TokenType.LONG) || this.check(TokenType.SHORT) ||
-              this.check(TokenType.UNSIGNED) || this.check(TokenType.SIGNED) ||
-              this.check(TokenType.FLOAT) || this.check(TokenType.DOUBLE) ||
-              (this.check(TokenType.IDENTIFIER) && this.typedefs.has(this.peek().value))) {
+if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || 
+          this.check(TokenType.VOID) || this.check(TokenType.STRUCT) || this.check(TokenType.ENUM) ||
+          this.check(TokenType.LONG) || this.check(TokenType.SHORT) ||
+          this.check(TokenType.UNSIGNED) || this.check(TokenType.SIGNED) ||
+          this.check(TokenType.FLOAT) || this.check(TokenType.DOUBLE) ||
+          this.check(TokenType.STATIC) || this.check(TokenType.EXTERN) || this.check(TokenType.INLINE) ||
+          this.check(TokenType.CONST) || this.check(TokenType.VOLATILE) || this.check(TokenType.RESTRICT) ||
+          (this.check(TokenType.IDENTIFIER) && this.typedefs.has(this.peek().value))) {
             const memberType = this.parseTypeSpecifier();
             const memberName = this.consume(TokenType.IDENTIFIER, 'Expected member name');
+            
+            // Handle bit fields
+            if (this.match(TokenType.COLON)) {
+              // Parse bit width (must be integer constant)
+              const bitWidth = this.parseExpression();
+              // For now, just ignore the bit width and continue
+            }
             
             // Handle array members
             if (this.match(TokenType.LEFT_BRACKET)) {
@@ -621,6 +645,33 @@ export class Parser {
         // Consume semicolon after struct definition if present
         if (this.check(TokenType.SEMICOLON)) {
           this.advance();
+        }
+      }
+    }
+    
+    // Handle enum types
+    if (token.type === TokenType.ENUM) {
+      if (this.check(TokenType.IDENTIFIER)) {
+        const enumName = this.advance().value;
+        typeName = `enum ${enumName}`;
+      } else {
+        // Anonymous enum
+        typeName = 'enum';
+      }
+      
+      // Check for enum body definition: enum Color { RED, GREEN, BLUE };
+      if (this.check(TokenType.LEFT_BRACE)) {
+        // Parse enum body - for now, just consume it
+        this.advance(); // consume '{'
+        let braceCount = 1;
+        while (braceCount > 0 && !this.isAtEnd()) {
+          if (this.match(TokenType.LEFT_BRACE)) {
+            braceCount++;
+          } else if (this.match(TokenType.RIGHT_BRACE)) {
+            braceCount--;
+          } else {
+            this.advance();
+          }
         }
       }
     }
@@ -897,6 +948,15 @@ export class Parser {
       } else {
         break;
       }
+    }
+    
+    // Handle asm variable attributes: extern int x asm("reg");
+    if (this.match(TokenType.ASM)) {
+      // Parse asm attribute with string literal
+      this.consume(TokenType.LEFT_PAREN, 'Expected \'(\' after asm');
+      const asmString = this.consume(TokenType.STRING, 'Expected string literal in asm attribute');
+      this.consume(TokenType.RIGHT_PAREN, 'Expected \')\' after asm string');
+      // For now, just ignore the asm attribute
     }
     
     this.consume(TokenType.SEMICOLON, 'Expected \';\' after variable declaration');
