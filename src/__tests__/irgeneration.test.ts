@@ -207,7 +207,7 @@ int main() {
       expect(ir.globals).toHaveLength(1);
       expect(ir.globals[0].name).toBe('global_var');
       expect(ir.globals[0].type).toBe('i32');
-      expect(ir.globals[0].initializer?.value).toBe(42);
+      expect((ir.globals[0].initializer as any)?.value).toBe(42);
       
       const irString = prettyPrintIR(ir);
       expect(irString).toContain('@global_var = global i32 42');

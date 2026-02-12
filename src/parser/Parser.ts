@@ -43,6 +43,7 @@ export enum NodeType {
   // Declarations
   ENUM_DECLARATION = 'ENUM_DECLARATION',
   UNION_DECLARATION = 'UNION_DECLARATION',
+  STRUCT_DECLARATION = 'STRUCT_DECLARATION',
   
   // Assembly
   ASM_STATEMENT = 'ASM_STATEMENT',
@@ -345,6 +346,13 @@ export interface UnionDeclarationNode extends ASTNode {
   fields: (DeclarationNode | MultiDeclarationNode)[];
 }
 
+export interface StructDeclarationNode extends ASTNode {
+  type: NodeType.STRUCT_DECLARATION;
+  varType: TypeSpecifierNode;
+  name: string;
+  storageClass?: string;
+}
+
 export type ExpressionNode = 
   | BinaryExpressionNode
   | UnaryExpressionNode
@@ -388,6 +396,7 @@ export type StatementNode =
   | ContinueStatementNode
   | EnumDeclarationNode
   | UnionDeclarationNode
+  | StructDeclarationNode
   | MultiDeclarationNode
   | InitializerListNode;
 
@@ -540,44 +549,16 @@ export class Parser {
           this.check(TokenType.LONG) || this.check(TokenType.SHORT) || this.check(TokenType.FLOAT) || this.check(TokenType.DOUBLE) ||
           this.check(TokenType.STATIC) || this.check(TokenType.EXTERN) || this.check(TokenType.INLINE) ||
           this.check(TokenType.CONST) || this.check(TokenType.VOLATILE) || this.check(TokenType.RESTRICT) ||
+          this.check(TokenType.ENUM) || this.check(TokenType.UNION) ||
           (this.check(TokenType.IDENTIFIER) && this.typedefs.has(this.peek().value))) {
-        // Special handling for struct/enum definitions
-        if (this.check(TokenType.STRUCT)) {
-          const savedPosition = this.current;
-          this.advance(); // consume 'struct'
-          if (this.check(TokenType.IDENTIFIER)) {
-            this.advance(); // consume struct name
-            if (this.check(TokenType.LEFT_BRACE)) {
-              // This is a struct definition, not a variable declaration
-              // Backtrack and parse as type specifier
-              this.current = savedPosition;
-              this.parseTypeSpecifier();
-              continue; // Skip to next iteration, struct definition handled
-            }
-          }
-          // Not a struct definition, backtrack
-          this.current = savedPosition;
-        } else if (this.check(TokenType.ENUM)) {
-          const savedPosition = this.current;
-          this.advance(); // consume 'enum'
-          if (this.check(TokenType.IDENTIFIER)) {
-            this.advance(); // consume enum name
-            if (this.check(TokenType.LEFT_BRACE)) {
-              // This is an enum definition, not a variable declaration
-              // Backtrack and parse as type specifier
-              this.current = savedPosition;
-              this.parseTypeSpecifier();
-              continue; // Skip to next iteration, enum definition handled
-            }
-          }
-          // Not an enum definition, backtrack
-          this.current = savedPosition;
-        }
         
         const declaration = this.parseDeclaration();
         if (declaration) {
           declarations.push(declaration);
         }
+      } else if (this.match(TokenType.SEMICOLON)) {
+        // Skip extra semicolons
+        continue;
       } else {
         this.error(this.peek(), 'Expected declaration');
       }
@@ -602,13 +583,32 @@ export class Parser {
     }
     
     console.log(`parseDeclaration: next token after storage classes: ${this.peek().type} ${this.peek().value}`);
+    console.log(`About to call parseTypeSpecifier, current token: ${this.peek().type} '${this.peek().value}' at ${this.peek().line}:${this.peek().column}`);
     const typeSpecifier = this.parseTypeSpecifier();
+    console.log(`After parseTypeSpecifier: typeName=${typeSpecifier.typeName}, next token: ${this.peek().type} '${this.peek().value}' at ${this.peek().line}:${this.peek().column}`);
+    console.log(`DEBUG: this.current=${this.current}, tokens.length=${this.tokens.length}`);
+    console.log(`DEBUG: tokens[${this.current}]=${this.tokens[this.current]?.type} '${this.tokens[this.current]?.value}'`);
+    console.log(`Will now check: this.check(TokenType.IDENTIFIER)=${this.check(TokenType.IDENTIFIER)}, this.check(TokenType.LEFT_PAREN)=${this.check(TokenType.LEFT_PAREN)}`);
     
     // Check if we have an identifier (might be an anonymous struct/union/enum if followed by ;)
     if (!this.check(TokenType.IDENTIFIER)) {
       if (this.check(TokenType.SEMICOLON)) {
         this.advance();
-        return null; // Empty declaration (e.g., struct foo { ... };)
+        
+        // Return a special declaration node for type definitions
+        let nodeType = NodeType.DECLARATION;
+        if (typeSpecifier.typeName.startsWith('struct')) nodeType = NodeType.STRUCT_DECLARATION as any;
+        else if (typeSpecifier.typeName.startsWith('union')) nodeType = NodeType.UNION_DECLARATION as any;
+        else if (typeSpecifier.typeName.startsWith('enum')) nodeType = NodeType.ENUM_DECLARATION as any;
+
+        return {
+          type: nodeType,
+          varType: typeSpecifier,
+          name: '',
+          storageClass: storageClasses.join(' ') as any,
+          line: typeSpecifier.line,
+          column: typeSpecifier.column,
+        } as any;
       }
     }
 
@@ -767,16 +767,21 @@ export class Parser {
 
     const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected identifier after type');
     const name = nameToken.value;
+    console.log(`After consuming identifier '${name}', next token: ${this.peek().type} '${this.peek().value}' at ${this.peek().line}:${this.peek().column}`);
+    console.log(`DEBUG: After consume, this.current=${this.current}`);
     
     // Check for function pointer array declarations like void (*func_ptr_array[4])
     if (this.check(TokenType.LEFT_PAREN)) {
+      console.log(`DEBUG: Entering LEFT_PAREN check block, this.current=${this.current}`);
       const savedPos = this.current;
       this.advance(); // consume '('
+      console.log(`DEBUG: After advance past '(', this.current=${this.current}, peek=${this.peek().type}`);
       
       // Check if this is a function pointer array: type (*name[size])
       if (this.match(TokenType.MULTIPLY)) {
+        console.log(`DEBUG: Matched MULTIPLY`);
         // This is a function pointer or function pointer array
-        this.consume(TokenType.RIGHT_PAREN); // consume ')'
+        this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer");
         
         // Now check if we have an array after the function pointer
         if (this.match(TokenType.LEFT_BRACKET)) {
@@ -810,7 +815,13 @@ export class Parser {
         
         // Not a function pointer array, backtrack and parse normally
         this.current = savedPos;
+        console.log(`DEBUG: Backtracked to savedPos=${savedPos}`);
+      } else {
+        // Not a function pointer array, backtrack
+        this.current = savedPos;
+        console.log(`DEBUG: Backtracked to savedPos=${savedPos}`);
       }
+      console.log(`DEBUG: Exiting LEFT_PAREN block without returning, this.current=${this.current}`);
     }
     
     if (this.check(TokenType.LEFT_PAREN)) {
@@ -848,44 +859,68 @@ export class Parser {
       };
     }
     
-    // Handle struct types
-    if (token.type === TokenType.STRUCT) {
-      this.consume(TokenType.IDENTIFIER, 'Expected struct name');
-      const structName = this.previous().value;
-      typeName = `struct ${structName}`;
+    // Handle struct/union types
+    if (token.type === TokenType.STRUCT || token.type === TokenType.UNION) {
+      const isUnion = token.type === TokenType.UNION;
       
-      // Check for struct body definition: struct Point { int x; int y; };
+      // Handle attributes after struct/union keyword
+      while (this.match(TokenType.ATTRIBUTE)) {
+        this.parseAttributeInDeclaration();
+      }
+
+      let structName = '';
+      if (this.check(TokenType.IDENTIFIER)) {
+        structName = this.advance().value;
+      }
+      
+      // Handle attributes after struct/union name
+      while (this.match(TokenType.ATTRIBUTE)) {
+        this.parseAttributeInDeclaration();
+      }
+
+      typeName = structName ? `${isUnion ? 'union' : 'struct'} ${structName}` : (isUnion ? 'union' : 'struct');
+      
+      // Check for struct/union body definition: struct Point { int x; int y; };
       if (this.check(TokenType.LEFT_BRACE)) {
-        // Parse struct body
+        // Parse struct/union body
         this.advance(); // consume '{'
         
+        const members: DeclarationNode[] = [];
         while (!this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
           if (this.check(TokenType.NEWLINE)) {
             this.advance();
             continue;
           }
           
-            // Parse member declaration
-            if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || 
-                this.check(TokenType.VOID) || this.check(TokenType.STRUCT) || this.check(TokenType.ENUM) ||
-                this.check(TokenType.LONG) || this.check(TokenType.SHORT) ||
-                this.check(TokenType.UNSIGNED) || this.check(TokenType.SIGNED) ||
-                this.check(TokenType.FLOAT) || this.check(TokenType.DOUBLE) ||
-                this.check(TokenType.STATIC) || this.check(TokenType.EXTERN) || this.check(TokenType.INLINE) ||
-                this.check(TokenType.CONST) || this.check(TokenType.VOLATILE) || this.check(TokenType.RESTRICT) ||
-                (this.check(TokenType.IDENTIFIER) && this.typedefs.has(this.peek().value))) {
-              const memberType = this.parseTypeSpecifier();
-              
-              const memberName = this.consume(TokenType.IDENTIFIER, 'Expected member name');
+          // Check for nested struct/union/enum without a type name first
+          if (this.check(TokenType.STRUCT) || this.check(TokenType.UNION) || this.check(TokenType.ENUM)) {
+            const nestedType = this.parseTypeSpecifier();
+            
+            // If followed by semicolon, it's an anonymous nested member
+            if (this.check(TokenType.SEMICOLON)) {
               members.push({
                 type: NodeType.DECLARATION,
-                varType: memberType,
-                name: memberName,
-                line: memberType.line,
-                column: memberType.column,
+                varType: nestedType,
+                name: '',
+                line: nestedType.line,
+                column: nestedType.column,
+              });
+              this.advance(); // consume ';'
+              continue;
+            }
+            
+            // If followed by identifier, it's a named member of that nested type
+            if (this.check(TokenType.IDENTIFIER)) {
+              const memberName = this.advance();
+              members.push({
+                type: NodeType.DECLARATION,
+                varType: nestedType,
+                name: memberName.value,
+                line: nestedType.line,
+                column: nestedType.column,
               });
               
-              // Handle array declarators and bit fields
+              // Handle array declarators
               if (this.match(TokenType.LEFT_BRACKET)) {
                 if (!this.check(TokenType.RIGHT_BRACKET)) {
                   this.parseExpression();
@@ -893,35 +928,54 @@ export class Parser {
                 this.consume(TokenType.RIGHT_BRACKET, "Expected ']' after array size");
               }
               
-              if (this.match(TokenType.COLON)) {
-                this.parseExpression();
-              }
-              
               this.consume(TokenType.SEMICOLON, "Expected ';' after member declaration");
               continue;
-            } else if (this.check(TokenType.STRUCT)) {
-              // For now, just skip anonymous struct definitions to avoid parse errors
-              if (this.check(TokenType.IDENTIFIER) && this.check(TokenType.LEFT_BRACE)) {
-                // Skip entire anonymous struct: struct { ... }
-                let braceCount = 1;
-                this.advance(); // consume identifier
-                while (braceCount > 0 && !this.isAtEnd()) {
-                  if (this.match(TokenType.LEFT_BRACE)) braceCount++;
-                  else if (this.match(TokenType.RIGHT_BRACE)) braceCount--;
-                  else this.advance();
-                }
-                continue;
-              }
+            }
+          }
+
+          // Parse member declaration normally
+          if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || 
+              this.check(TokenType.VOID) || this.check(TokenType.STRUCT) || this.check(TokenType.ENUM) ||
+              this.check(TokenType.UNION) ||
+              this.check(TokenType.LONG) || this.check(TokenType.SHORT) ||
+              this.check(TokenType.UNSIGNED) || this.check(TokenType.SIGNED) ||
+              this.check(TokenType.FLOAT) || this.check(TokenType.DOUBLE) ||
+              this.check(TokenType.STATIC) || this.check(TokenType.EXTERN) || this.check(TokenType.INLINE) ||
+              this.check(TokenType.CONST) || this.check(TokenType.VOLATILE) || this.check(TokenType.RESTRICT) ||
+              (this.check(TokenType.IDENTIFIER) && this.typedefs.has(this.peek().value))) {
+            const memberType = this.parseTypeSpecifier();
             
-            // Handle array members
+            // Handle anonymous members (rare but possible in some extensions)
+            if (this.check(TokenType.SEMICOLON)) {
+              this.advance();
+              continue;
+            }
+
+            const memberName = this.consume(TokenType.IDENTIFIER, 'Expected member name');
+            const memberNameValue = memberName.value;
+            
+            members.push({
+              type: NodeType.DECLARATION,
+              varType: memberType,
+              name: memberNameValue,
+              line: memberType.line,
+              column: memberType.column,
+            });
+            
+            // Handle array declarators and bit fields
             if (this.match(TokenType.LEFT_BRACKET)) {
               if (!this.check(TokenType.RIGHT_BRACKET)) {
-                this.parseExpression(); // parse array size
+                this.parseExpression();
               }
               this.consume(TokenType.RIGHT_BRACKET, "Expected ']' after array size");
             }
             
+            if (this.match(TokenType.COLON)) {
+              this.parseExpression();
+            }
+            
             this.consume(TokenType.SEMICOLON, "Expected ';' after member declaration");
+            continue;
           } else {
             // Safety: if we don't recognize it, skip it to avoid infinite loop
             this.advance();
@@ -930,27 +984,24 @@ export class Parser {
         
         this.consume(TokenType.RIGHT_BRACE, "Expected '}' after struct body");
         
-        // After struct body, there might be variable declarations
-        // e.g., struct Point { ... } p1, p2;
-        // For now, we consume any variable names
-        while (this.check(TokenType.IDENTIFIER)) {
-          this.advance(); // consume variable name
-          if (this.check(TokenType.COMMA)) {
-            this.advance();
-          } else {
-            break;
-          }
+        // Handle attributes after struct/union body
+        while (this.match(TokenType.ATTRIBUTE)) {
+          this.parseAttributeInDeclaration();
         }
         
-        // Consume semicolon after struct definition if present
-        if (this.check(TokenType.SEMICOLON)) {
-          this.advance();
-        }
+        // After struct body, there might be variable declarations
+        // e.g., struct Point { ... } p1, p2;
+        // This is handled by the caller (parseDeclaration)
       }
     }
     
     // Handle enum types
     if (token.type === TokenType.ENUM) {
+      // Handle attributes after enum keyword
+      while (this.match(TokenType.ATTRIBUTE)) {
+        this.parseAttributeInDeclaration();
+      }
+
       if (this.check(TokenType.IDENTIFIER)) {
         const enumName = this.advance().value;
         typeName = `enum ${enumName}`;
@@ -959,6 +1010,11 @@ export class Parser {
         typeName = 'enum';
       }
       
+      // Handle attributes after enum name
+      while (this.match(TokenType.ATTRIBUTE)) {
+        this.parseAttributeInDeclaration();
+      }
+
       // Check for enum body definition: enum Color { RED, GREEN, BLUE };
       if (this.check(TokenType.LEFT_BRACE)) {
         // Parse enum body - for now, just consume it
@@ -972,6 +1028,11 @@ export class Parser {
           } else {
             this.advance();
           }
+        }
+
+        // Handle attributes after enum body
+        while (this.match(TokenType.ATTRIBUTE)) {
+          this.parseAttributeInDeclaration();
         }
       }
     }
@@ -1189,6 +1250,11 @@ export class Parser {
     let currentType = varType;
 
     while (true) {
+      // Support __attribute__ after variable name
+      while (this.match(TokenType.ATTRIBUTE)) {
+        this.parseAttributeInDeclaration();
+      }
+
       let arraySize: ExpressionNode | undefined;
       let initializer: ExpressionNode | undefined;
 
@@ -1199,12 +1265,22 @@ export class Parser {
         }
         this.consume(TokenType.RIGHT_BRACKET, "Expected ']' after array size");
         
+        // Support __attribute__ after array declarator
+        while (this.match(TokenType.ATTRIBUTE)) {
+          this.parseAttributeInDeclaration();
+        }
+
         // Update type to be an array
         currentType = {
           ...currentType,
           isPointer: true,
           pointerCount: currentType.pointerCount + 1,
         };
+      }
+      
+      // Support __attribute__ after variable declarator
+      while (this.match(TokenType.ATTRIBUTE)) {
+        this.parseAttributeInDeclaration();
       }
       
       if (this.match(TokenType.ASSIGN)) {

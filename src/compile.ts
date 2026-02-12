@@ -28,15 +28,14 @@ async function main() {
   
   if (args.includes('-v') || args.includes('-V') || args.includes('--version')) {
     console.log(`
-   ____  ____  ______ __  __ _      ______ 
-  |  _ \\|_  _|/  ____|  |/  | |    |  ____|
-  | |_) | | | | |    | \\  / | |    | |__   
-  |  __/  | | | |    | |\\/| | |    |  __|  
-  | |    _| |_| \\____| |  | | |____| |____ 
-  |_|   |_____|\\_____|_|  |_|______|______|
-                                           
-  Pickle C Compiler (pcc) v1.1.0
-  A modern TypeScript-based C compiler for x86-64
+ ____   ____ ____ 
+|  _ \\ / ___/ ___|
+| |_) | |  | |    
+|  __/| |__| |___ 
+|_|    \\____\\____|
+                                                      
+   Pickle C Compiler (pcc) v1.1.0
+   A modern TypeScript-based C compiler for x86-64
     `);
     process.exit(0);
   }
@@ -60,6 +59,9 @@ async function main() {
     const lexer = new Lexer(sourceCode);
     const tokens = lexer.tokenize();
     console.log(`Generated ${tokens.length} tokens`);
+    tokens.forEach((token, i) => {
+      console.log(`  [${i}] ${token.type}: '${token.value}' at ${token.line}:${token.column}`);
+    });
     
     // Phase 2: Parsing
     console.log(`\n=== Phase 2: Parsing ===`);

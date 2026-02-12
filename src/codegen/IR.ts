@@ -121,9 +121,17 @@ export interface IRBlock {
   >;
 }
 
+export interface IRGlobal {
+  name: string;
+  type: IRType;
+  initializer?: IRConstant | IRConstant[];
+  isArray?: boolean;
+  arraySize?: number;
+}
+
 export interface IRModule {
   functions: IRFunction[];
-  globals: Array<{ name: string; type: IRType; initializer?: IRConstant }>;
+  globals: IRGlobal[];
 }
 
 // Type utilities
@@ -177,8 +185,15 @@ export function prettyPrintIR(module: IRModule): string {
   // Print globals
   for (const global of module.globals) {
     result += `@${global.name} = global ${global.type}`;
+    if (global.isArray) {
+      result += `[${global.arraySize}]`;
+    }
     if (global.initializer) {
-      result += ` ${global.initializer.value}`;
+      if (Array.isArray(global.initializer)) {
+        result += ` { ${global.initializer.map(c => c.value).join(', ')} }`;
+      } else {
+        result += ` ${global.initializer.value}`;
+      }
     }
     result += '\n';
   }

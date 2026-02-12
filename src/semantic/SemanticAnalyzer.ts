@@ -6,7 +6,7 @@ import {
   IdentifierNode, NumberLiteralNode, StringLiteralNode, CharacterLiteralNode,
   TypeSpecifierNode, ParameterNode, CompoundStatementNode, SizeofExpressionNode,
   CastExpressionNode, MemberAccessNode, ArrayAccessNode, ExpressionNode, StatementNode,
-  MultiDeclarationNode
+  MultiDeclarationNode, InitializerListNode, StructDeclarationNode
 } from '../parser/Parser';
 import { SymbolTable, Symbol, DataType, BaseType, BuiltinTypes, typeToString, isSameType } from './SymbolTable';
 import { TypeChecker } from './TypeChecker';
@@ -59,8 +59,8 @@ export class SemanticAnalyzer {
         (declaration as MultiDeclarationNode).declarations.forEach(decl => {
           this.analyzeVariableDeclaration(decl);
         });
-      } else if (declaration.type === NodeType.UNION_DECLARATION) {
-        // Skip for now
+      } else if (declaration.type === NodeType.STRUCT_DECLARATION || declaration.type === NodeType.UNION_DECLARATION || declaration.type === NodeType.ENUM_DECLARATION) {
+        // Skip type definitions for now, or we could register them in a type table
       } else if (declaration.type === NodeType.ATTRIBUTE_STMT) {
         // Skip attributes
       }
@@ -165,7 +165,7 @@ export class SemanticAnalyzer {
 
     // Analyze initializer if present
     if (node.initializer) {
-      const result = this.analyzeExpression(node.initializer);
+      const result = this.analyzeExpression(node.initializer, varType);
       if (!result.isError && !isSameType(result.type, varType)) {
         // Allow initialization of pointer with 0
         if (varType.isPointer && isSameType(result.type, BuiltinTypes.INT)) {
@@ -210,6 +210,12 @@ export class SemanticAnalyzer {
         (node as MultiDeclarationNode).declarations.forEach(decl => {
           this.analyzeVariableDeclaration(decl);
         });
+        break;
+
+      case NodeType.STRUCT_DECLARATION:
+      case NodeType.UNION_DECLARATION:
+      case NodeType.ENUM_DECLARATION:
+        // Type definitions are handled during second pass or ignored if local
         break;
 
       case NodeType.EMPTY_STATEMENT:
@@ -367,7 +373,7 @@ export class SemanticAnalyzer {
     // Don't add duplicate errors - the expression analyzer already adds them
   }
 
-  private analyzeExpression(node: ExpressionNode): { type: DataType; isError: boolean; errorMessage?: string } {
+  private analyzeExpression(node: ExpressionNode, expectedType?: DataType): { type: DataType; isError: boolean; errorMessage?: string } {
     switch (node.type) {
       case NodeType.ASSIGNMENT:
         return this.analyzeAssignmentExpression(node as AssignmentNode);
@@ -429,11 +435,25 @@ export class SemanticAnalyzer {
         return { type: BuiltinTypes.INT, isError: false };
 
       case NodeType.INITIALIZER_LIST:
-        return { type: BuiltinTypes.INT, isError: false };
+        return this.analyzeInitializerList(node as InitializerListNode, expectedType);
 
       default:
         return { type: BuiltinTypes.VOID, isError: true, errorMessage: 'Unknown expression type' };
     }
+  }
+
+  private analyzeInitializerList(node: InitializerListNode, expectedType?: DataType): { type: DataType; isError: boolean; errorMessage?: string } {
+    if (!expectedType) {
+      return { type: BuiltinTypes.INT, isError: false };
+    }
+
+    // Basic analysis: check each item in the list
+    for (const item of node.initializers) {
+      // In a full implementation, we'd check if 'item.designator' matches 'expectedType'
+      this.analyzeExpression(item.value);
+    }
+
+    return { type: expectedType, isError: false };
   }
 
   private analyzeBinaryExpression(node: BinaryExpressionNode): { type: DataType; isError: boolean; errorMessage?: string } {

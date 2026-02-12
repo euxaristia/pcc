@@ -3,7 +3,7 @@ import {
   IRJump, IRJumpIf, IRCall, IRRet, IROpCode, IRType, isFloatingPointType
 } from './IR';
 import {
-  X8664CallingConvention, InstructionSelector, RegisterAllocator, StackManager
+  X8664CallingConvention, CallingConvention, InstructionSelector, RegisterAllocator, StackManager
 } from './TargetArchitecture';
 
 export interface AssemblySection {
@@ -20,7 +20,7 @@ export class X8664AssemblyGenerator {
   private instructionSelector: InstructionSelector;
   private assemblyProgram: AssemblyProgram;
 
-  constructor(callingConvention?: CallingConvention = X8664CallingConvention) {
+  constructor(callingConvention: CallingConvention = X8664CallingConvention) {
     this.instructionSelector = new InstructionSelector(callingConvention || X8664CallingConvention);
     this.assemblyProgram = {
       sections: [],
@@ -43,23 +43,50 @@ export class X8664AssemblyGenerator {
     return this.assemblyProgram;
   }
 
-  private generateDataSection(globals: Array<{ name: string; type: IRType; initializer?: IRConstant }>): void {
+  private generateDataSection(globals: Array<any>): void {
     if (globals.length === 0) return;
 
     let dataSection = '.data\n';
     
     for (const global of globals) {
       dataSection += `  .globl ${global.name}\n`;
+      if (global.isArray && global.arraySize) {
+        dataSection += `  .align 16\n`; // Common for arrays
+      }
       dataSection += `  ${global.name}:\n`;
       
       if (global.initializer !== undefined) {
-        if (global.type === IRType.I32 || global.type === IRType.F32) {
-          dataSection += `  .long ${global.initializer.value}\n`;
-        } else if (global.type === IRType.I8) {
-          dataSection += `  .byte ${global.initializer.value}\n`;
-        } else if (global.type === IRType.I64 || global.type === IRType.F64) {
-          dataSection += `  .quad ${global.initializer.value}\n`;
+        if (Array.isArray(global.initializer)) {
+          for (const init of global.initializer) {
+            if (global.type === IRType.I32 || global.type === IRType.F32) {
+              dataSection += `  .long ${init.value}\n`;
+            } else if (global.type === IRType.I8) {
+              dataSection += `  .byte ${init.value}\n`;
+            } else if (global.type === IRType.I64 || global.type === IRType.F64 || global.type === IRType.PTR) {
+              dataSection += `  .quad ${init.value}\n`;
+            }
+          }
+          
+          // Padding if array is larger than initializers
+          if (global.isArray && global.arraySize > global.initializer.length) {
+            const remaining = global.arraySize - global.initializer.length;
+            const size = this.getTypeSize(global.type);
+            dataSection += `  .zero ${remaining * size}\n`;
+          }
+        } else {
+          if (global.type === IRType.I32 || global.type === IRType.F32) {
+            dataSection += `  .long ${global.initializer.value}\n`;
+          } else if (global.type === IRType.I8) {
+            dataSection += `  .byte ${global.initializer.value}\n`;
+          } else if (global.type === IRType.I64 || global.type === IRType.F64 || global.type === IRType.PTR) {
+            dataSection += `  .quad ${global.initializer.value}\n`;
+          }
         }
+      } else if (global.isArray && global.arraySize) {
+        const size = this.getTypeSize(global.type);
+        this.assemblyProgram.globals.push(`  .globl ${global.name}\n`);
+        this.assemblyProgram.globals.push(`  .comm ${global.name}, ${global.arraySize * size}, 16\n`);
+        continue;
       } else {
         // Uninitialized global - put in .bss section instead
         this.assemblyProgram.globals.push(`  .globl ${global.name}\n`);
