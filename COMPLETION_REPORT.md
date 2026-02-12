@@ -162,9 +162,9 @@ int main() {
 
 ### Development Mode
 ```bash
-npm test                    # Run all tests
-npm run build              # Build TypeScript
-npm run dev                # Watch mode
+bun test                    # Run all tests
+bun run build              # Build TypeScript
+bun run dev                # Watch mode
 ```
 
 ### Compilation Pipeline Demo

@@ -91,8 +91,8 @@ A complete C compiler implementation with modern software engineering practices,
 ```bash
 git clone https://github.com/euxaristia/pcc.git
 cd pcc
-npm install
-npm run build
+bun install
+bun run build
 ```
 
 ### Compilation
@@ -139,10 +139,10 @@ PICKLE_OUTPUT=asm ./dist/compile.js program.c
 ### Build from Source
 ```bash
 # Development build
-npm run dev     # Watch mode
+bun run dev     # Watch mode
 
 # Production build
-npm run build    # Single build
+bun run build    # Single build
 ```
 
 ### Project Structure
@@ -181,15 +181,15 @@ src/
 ### Test Suite
 ```bash
 # Run all tests
-npm test
+bun test
 
 # Run specific test suites
-npm test src/__tests__/lexer.test.ts
-npm test src/__tests__/parser.test.ts
-npm test src/__tests__/semantic.test.ts
+bun test src/__tests__/lexer.test.ts
+bun test src/__tests__/parser.test.ts
+bun test src/__tests__/semantic.test.ts
 
 # Test coverage
-npm run test:coverage
+bun run test:coverage
 ```
 
 ### Test Results
@@ -221,22 +221,22 @@ npm run test:coverage
 2. Create a feature branch: `git checkout -b feature-name`
 3. Make your changes
 4. Add tests for new functionality
-5. Ensure all tests pass: `npm test`
+5. Ensure all tests pass: `bun test`
 6. Submit pull request with clear description
 
 ### Development Workflow
 ```bash
 # Watch mode for development
-npm run dev
+bun run dev
 
 # Build with type checking
-npm run build
+bun run build
 
 # Test specific components
-npm test -- --testNamePattern="lexer.*"
+bun test -- --testNamePattern="lexer.*"
 
 # Run integration tests
-npm test src/__tests__/integration.test.ts
+bun test src/__tests__/integration.test.ts
 ```
 
 ---
