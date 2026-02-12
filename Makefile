@@ -2,7 +2,7 @@
 
 # Compiler and flags
 CC = node
-TSC = npx tsc
+TSC = /usr/share/nodejs/corepack/shims/npx tsc
 INSTALL = install
 PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
@@ -30,10 +30,14 @@ dev:
 # Install the compiler to system PATH
 install: build
 	$(INSTALL) -d $(DESTDIR)$(BINDIR)
+	$(INSTALL) -d $(DESTDIR)$(PREFIX)/lib
 	$(INSTALL) -d $(DESTDIR)$(PREFIX)/lib/pcc
 	$(INSTALL) -m 755 pcc-wrapper $(DESTDIR)$(BINDIR)/pcc
 	cp -r $(DIST_DIR)/* $(DESTDIR)$(PREFIX)/lib/pcc/
 	chmod +x $(DESTDIR)$(BINDIR)/pcc
+	@echo "Running sanity test..."
+	@echo "int main() { return 0; }" > /tmp/pcc-test.c
+	@$(DESTDIR)$(BINDIR)/pcc /tmp/pcc-test.c -o /tmp/pcc-test 2>&1 && rm -f /tmp/pcc-test /tmp/pcc-test.c && echo "Sanity test passed!" || (echo "Sanity test FAILED - compiler not installed!"; rm -f /tmp/pcc-test /tmp/pcc-test.c; exit 1)
 	@echo "PCC installed to $(DESTDIR)$(BINDIR)"
 	@echo "You can now use 'pcc' as a C compiler"
 
