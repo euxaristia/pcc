@@ -34,7 +34,7 @@ async function main() {
 |  __/| |__| |___ 
 |_|    \\____\\____|
                                                       
-   Pickle C Compiler (pcc) v1.1.0
+   Pickle C Compiler (pcc) v1.1.0-${process.env.PCC_COMMIT || 'dev'}
    A modern TypeScript-based C compiler for x86-64
     `);
     process.exit(0);

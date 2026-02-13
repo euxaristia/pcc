@@ -4,6 +4,14 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PCC_LIB_DIR="$SCRIPT_DIR/../lib/pcc"
 
+# Detect project root and commit SHA
+PROJ_ROOT="/home/euxaristia/Projects/pcc"
+if [ -d "$PROJ_ROOT/.git" ]; then
+    export PCC_COMMIT=$(git -C "$PROJ_ROOT" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+else
+    export PCC_COMMIT="unknown"
+fi
+
 # Parse gcc-like arguments
 SOURCE_FILE=""
 OUTPUT_FILE=""
@@ -14,9 +22,9 @@ while [[ $# -gt 0 ]]; do
         -v|-V|--version)
             # Run the compiler with version flag and exit
             if [ -d "$PCC_LIB_DIR" ]; then
-                node "$PCC_LIB_DIR/compile.js" "$1"
+                bun "$PCC_LIB_DIR/compile.js" "$1"
             else
-                node "$(dirname "$0")/dist/compile.js" "$1"
+                bun "$PROJ_ROOT/dist/compile.js" "$1"
             fi
             exit 0
             ;;
@@ -50,10 +58,10 @@ fi
 # Run the compiler
 if [ -d "$PCC_LIB_DIR" ]; then
     export NODE_PATH="$PCC_LIB_DIR:$NODE_PATH"
-    node "$PCC_LIB_DIR/compile.js" "$SOURCE_FILE" > /dev/null
+    bun "$PCC_LIB_DIR/compile.js" "$SOURCE_FILE" > /dev/null
 else
     # Fallback to local development
-    node "$(dirname "$0")/dist/compile.js" "$SOURCE_FILE" > /dev/null
+    bun "$PROJ_ROOT/dist/compile.js" "$SOURCE_FILE" > /dev/null
 fi
 
 # Check if compilation succeeded
