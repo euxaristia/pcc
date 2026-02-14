@@ -17,3 +17,4 @@ bun.lockb
 *.tsbuildinfo
 .DS_Store
 .env
+examples/large_test.c
