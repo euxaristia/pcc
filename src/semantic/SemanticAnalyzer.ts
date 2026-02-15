@@ -27,6 +27,18 @@ export class SemanticAnalyzer {
   constructor() {
     this.symbolTable = new SymbolTable();
     this.typeChecker = new TypeChecker();
+    
+    // Declare built-in functions
+    this.declareBuiltinFunctions();
+  }
+  
+  private declareBuiltinFunctions(): void {
+    // __builtin_expect(exp, c) - returns exp (branch hint)
+    this.typeChecker.declareFunction({
+      name: '__builtin_expect',
+      returnType: BuiltinTypes.INT,
+      parameterTypes: [BuiltinTypes.INT, BuiltinTypes.INT],
+    });
   }
 
   analyze(node: ASTNode): SemanticError[] {
@@ -436,6 +448,10 @@ export class SemanticAnalyzer {
 
       case NodeType.INITIALIZER_LIST:
         return this.analyzeInitializerList(node as InitializerListNode, expectedType);
+
+      case NodeType.COMPOUND_LITERAL:
+        // Compound literal has the type specified in the literal
+        return { type: BuiltinTypes.INT, isError: false };
 
       default:
         return { type: BuiltinTypes.VOID, isError: true, errorMessage: 'Unknown expression type' };

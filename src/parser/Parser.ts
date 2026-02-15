@@ -39,6 +39,7 @@ export enum NodeType {
   // Types
   TYPE_SPECIFIER = 'TYPE_SPECIFIER',
   INITIALIZER_LIST = 'INITIALIZER_LIST',
+  COMPOUND_LITERAL = 'COMPOUND_LITERAL',
   
   // Declarations
   ENUM_DECLARATION = 'ENUM_DECLARATION',
@@ -299,6 +300,12 @@ export interface InitializerListNode extends ASTNode {
   initializers: InitializerNode[];
 }
 
+export interface CompoundLiteralNode extends ASTNode {
+  type: NodeType.COMPOUND_LITERAL;
+  typeSpec: TypeSpecifierNode;
+  initializers: ExpressionNode[];
+}
+
 export interface InitializerNode extends ASTNode {
   type: NodeType.INITIALIZER_LIST;
   designator?: string | ExpressionNode;
@@ -368,7 +375,8 @@ export type ExpressionNode =
   | ArrayAccessNode
   | MemberAccessNode
   | TernaryExpressionNode
-  | InitializerListNode;
+  | InitializerListNode
+  | CompoundLiteralNode;
 
 export type StatementNode = 
   | DeclarationNode
@@ -2091,19 +2099,48 @@ export class Parser {
 
   private parseUnary(): ExpressionNode {
     // Handle type casting: (type) expression
+    // Also handle compound literals: (type){initializer}
     if (this.check(TokenType.LEFT_PAREN)) {
       const savedPosition = this.current;
       this.advance(); // consume '('
       
-      // Check if it's a type cast by looking for a type keyword or typedef
+      // Check if it's a type cast or compound literal by looking for a type keyword or typedef
       const nextToken = this.peek();
       if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || 
           this.check(TokenType.VOID) || this.check(TokenType.STRUCT) ||
           this.check(TokenType.LONG) || this.check(TokenType.SHORT) ||
           this.check(TokenType.UNSIGNED) || this.check(TokenType.SIGNED) ||
+          this.check(TokenType.FLOAT) || this.check(TokenType.DOUBLE) ||
+          this.check(TokenType.CONST) || this.check(TokenType.VOLATILE) ||
+          this.check(TokenType.UNION) || this.check(TokenType.ENUM) ||
           (nextToken.type === TokenType.IDENTIFIER && this.typedefs.has(nextToken.value))) {
-        // It's a type cast
+        // It's a type cast OR compound literal
         const targetType = this.parseTypeSpecifier();
+        
+        // Check for compound literal: (type){initializer}
+        if (this.match(TokenType.RIGHT_PAREN) && this.check(TokenType.LEFT_BRACE)) {
+          // It's a compound literal
+          this.advance(); // consume '{'
+          
+          // Parse initializer list
+          const initializers: ExpressionNode[] = [];
+          if (!this.check(TokenType.RIGHT_BRACE)) {
+            do {
+              initializers.push(this.parseAssignment());
+            } while (this.match(TokenType.COMMA));
+          }
+          this.consume(TokenType.RIGHT_BRACE, "Expected '}' after compound literal initializers");
+          
+          return {
+            type: NodeType.COMPOUND_LITERAL,
+            typeSpec: targetType,
+            initializers,
+            line: targetType.line,
+            column: targetType.column,
+          };
+        }
+        
+        // It's a type cast
         this.consume(TokenType.RIGHT_PAREN, "Expected ')' after type in cast");
         const operand = this.parseUnary(); // Cast has high precedence
         return {
@@ -2304,6 +2341,7 @@ export class Parser {
       };
     }
     
+    // Handle regular parenthesized expressions
     if (this.match(TokenType.LEFT_PAREN)) {
       const expr = this.parseExpression();
       this.consume(TokenType.RIGHT_PAREN, 'Expected \')\' after expression');

@@ -650,6 +650,11 @@ export class IRGenerator {
         // In a full implementation, we'd handle array/struct initialization
         return createConstant(0, IRType.I32);
 
+      case NodeType.COMPOUND_LITERAL:
+        // Compound literals evaluate to the address of the initializer
+        // For now, return a dummy constant
+        return createConstant(0, IRType.I32);
+
       default:
         const never: never = expr;
         throw new Error(`Unsupported expression type: ${never}`);
