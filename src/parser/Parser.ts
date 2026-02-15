@@ -2118,38 +2118,43 @@ export class Parser {
         const targetType = this.parseTypeSpecifier();
         
         // Check for compound literal: (type){initializer}
-        if (this.match(TokenType.RIGHT_PAREN) && this.check(TokenType.LEFT_BRACE)) {
-          // It's a compound literal
-          this.advance(); // consume '{'
-          
-          // Parse initializer list
-          const initializers: ExpressionNode[] = [];
-          if (!this.check(TokenType.RIGHT_BRACE)) {
-            do {
-              initializers.push(this.parseAssignment());
-            } while (this.match(TokenType.COMMA));
+        // Note: after parseTypeSpecifier, pointers have been consumed
+        if (this.check(TokenType.RIGHT_PAREN)) {
+          const afterParen = this.peek(1);
+          if (afterParen.type === TokenType.LEFT_BRACE) {
+            // It's a compound literal: (type){initializer}
+            this.advance(); // consume ')'
+            this.advance(); // consume '{'
+            
+            // Parse initializer list
+            const initializers: ExpressionNode[] = [];
+            if (!this.check(TokenType.RIGHT_BRACE)) {
+              do {
+                initializers.push(this.parseAssignment());
+              } while (this.match(TokenType.COMMA));
+            }
+            this.consume(TokenType.RIGHT_BRACE, "Expected '}' after compound literal initializers");
+            
+            return {
+              type: NodeType.COMPOUND_LITERAL,
+              typeSpec: targetType,
+              initializers,
+              line: targetType.line,
+              column: targetType.column,
+            };
           }
-          this.consume(TokenType.RIGHT_BRACE, "Expected '}' after compound literal initializers");
           
+          // It's a type cast: (type)expression
+          this.advance(); // consume ')'
+          const operand = this.parseUnary(); // Cast has high precedence
           return {
-            type: NodeType.COMPOUND_LITERAL,
-            typeSpec: targetType,
-            initializers,
+            type: NodeType.CAST_EXPRESSION,
+            targetType,
+            operand,
             line: targetType.line,
             column: targetType.column,
           };
         }
-        
-        // It's a type cast
-        this.consume(TokenType.RIGHT_PAREN, "Expected ')' after type in cast");
-        const operand = this.parseUnary(); // Cast has high precedence
-        return {
-          type: NodeType.CAST_EXPRESSION,
-          targetType,
-          operand,
-          line: targetType.line,
-          column: targetType.column,
-        };
       } else {
         // Not a type cast, backtrack and parse as parenthesized expression
         this.current = savedPosition;
