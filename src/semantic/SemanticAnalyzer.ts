@@ -125,6 +125,25 @@ export class SemanticAnalyzer {
       returnType: BuiltinTypes.INT,
       parameterTypes: [BuiltinTypes.INT, BuiltinTypes.INT], // Simplified
     });
+    
+    // Common kernel macros as builtins
+    this.typeChecker.declareFunction({
+      name: 'BIT',
+      returnType: BuiltinTypes.LONG,
+      parameterTypes: [BuiltinTypes.INT],
+    });
+    
+    this.typeChecker.declareFunction({
+      name: 'min',
+      returnType: BuiltinTypes.INT,
+      parameterTypes: [BuiltinTypes.INT, BuiltinTypes.INT],
+    });
+    
+    this.typeChecker.declareFunction({
+      name: 'max',
+      returnType: BuiltinTypes.INT,
+      parameterTypes: [BuiltinTypes.INT, BuiltinTypes.INT],
+    });
   }
 
   analyze(node: ASTNode): SemanticError[] {

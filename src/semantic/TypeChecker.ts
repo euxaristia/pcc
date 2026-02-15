@@ -82,6 +82,19 @@ export class TypeChecker {
         errorMessage: `Invalid operands to arithmetic operator '${operator}': ${typeToString(left)} and ${typeToString(right)}`,
       };
     }
+    
+    // Bitwise operations: |, &, ^, <<, >>
+    if (['|', '&', '^', '<<', '>>'].includes(operator)) {
+      if (this.isNumeric(left) && this.isNumeric(right)) {
+        // Result is the promoted type
+        return { type: this.getPromotedType(left, right), isError: false };
+      }
+      return {
+        type: BuiltinTypes.INT,
+        isError: true,
+        errorMessage: `Invalid operands to bitwise operator '${operator}': ${typeToString(left)} and ${typeToString(right)}`,
+      };
+    }
 
     // Comparison operations
     if (['==', '!=', '<', '>', '<=', '>='].includes(operator)) {
