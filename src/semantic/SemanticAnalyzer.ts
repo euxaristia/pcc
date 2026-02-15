@@ -39,6 +39,74 @@ export class SemanticAnalyzer {
       returnType: BuiltinTypes.INT,
       parameterTypes: [BuiltinTypes.INT, BuiltinTypes.INT],
     });
+    
+    // __builtin_return_address(n) - returns return address
+    this.typeChecker.declareFunction({
+      name: '__builtin_return_address',
+      returnType: { ...BuiltinTypes.VOID, isPointer: true },
+      parameterTypes: [BuiltinTypes.INT],
+    });
+    
+    // __builtin_frame_address(n) - returns frame address
+    this.typeChecker.declareFunction({
+      name: '__builtin_frame_address',
+      returnType: { ...BuiltinTypes.VOID, isPointer: true },
+      parameterTypes: [BuiltinTypes.INT],
+    });
+    
+    // __builtin_prefetch(addr, rw, locality) - prefetch memory
+    this.typeChecker.declareFunction({
+      name: '__builtin_prefetch',
+      returnType: BuiltinTypes.VOID,
+      parameterTypes: [{ ...BuiltinTypes.VOID, isPointer: true }, BuiltinTypes.INT, BuiltinTypes.INT],
+    });
+    
+    // __builtin_trap() - generates a breakpoint/trap
+    this.typeChecker.declareFunction({
+      name: '__builtin_trap',
+      returnType: BuiltinTypes.VOID,
+      parameterTypes: [],
+    });
+    
+    // __builtin_debugtrap() - generates a debug trap
+    this.typeChecker.declareFunction({
+      name: '__builtin_debugtrap',
+      returnType: BuiltinTypes.VOID,
+      parameterTypes: [],
+    });
+    
+    // __builtin_memcpy, __builtin_memmove, etc.
+    this.typeChecker.declareFunction({
+      name: '__builtin_memcpy',
+      returnType: { ...BuiltinTypes.VOID, isPointer: true },
+      parameterTypes: [{ ...BuiltinTypes.VOID, isPointer: true }, { ...BuiltinTypes.VOID, isPointer: true }, BuiltinTypes.INT],
+    });
+    
+    this.typeChecker.declareFunction({
+      name: '__builtin_memset',
+      returnType: { ...BuiltinTypes.VOID, isPointer: true },
+      parameterTypes: [{ ...BuiltinTypes.VOID, isPointer: true }, BuiltinTypes.INT, BuiltinTypes.INT],
+    });
+    
+    // __builtin_va_start, __builtin_va_end, etc. for variadic functions
+    this.typeChecker.declareFunction({
+      name: '__builtin_va_start',
+      returnType: BuiltinTypes.VOID,
+      parameterTypes: [{ ...BuiltinTypes.VOID, isPointer: true }, BuiltinTypes.INT],
+    });
+    
+    this.typeChecker.declareFunction({
+      name: '__builtin_va_end',
+      returnType: BuiltinTypes.VOID,
+      parameterTypes: [{ ...BuiltinTypes.VOID, isPointer: true }],
+    });
+    
+    // __builtin_offsetof(type, member) - returns offset of member
+    this.typeChecker.declareFunction({
+      name: '__builtin_offsetof',
+      returnType: BuiltinTypes.INT,
+      parameterTypes: [BuiltinTypes.INT, BuiltinTypes.INT], // Simplified
+    });
   }
 
   analyze(node: ASTNode): SemanticError[] {
