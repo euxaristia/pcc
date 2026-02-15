@@ -88,6 +88,24 @@ export class SemanticAnalyzer {
       parameterTypes: [{ ...BuiltinTypes.VOID, isPointer: true }, BuiltinTypes.INT, BuiltinTypes.INT],
     });
     
+    this.typeChecker.declareFunction({
+      name: '__builtin_memchr',
+      returnType: { ...BuiltinTypes.VOID, isPointer: true },
+      parameterTypes: [{ ...BuiltinTypes.VOID, isPointer: true }, BuiltinTypes.INT, BuiltinTypes.INT],
+    });
+    
+    this.typeChecker.declareFunction({
+      name: '__builtin_strlen',
+      returnType: BuiltinTypes.INT,
+      parameterTypes: [{ ...BuiltinTypes.VOID, isPointer: true }],
+    });
+    
+    this.typeChecker.declareFunction({
+      name: '__builtin_strcmp',
+      returnType: BuiltinTypes.INT,
+      parameterTypes: [{ ...BuiltinTypes.VOID, isPointer: true }, { ...BuiltinTypes.VOID, isPointer: true }],
+    });
+    
     // __builtin_va_start, __builtin_va_end, etc. for variadic functions
     this.typeChecker.declareFunction({
       name: '__builtin_va_start',
@@ -519,6 +537,15 @@ export class SemanticAnalyzer {
 
       case NodeType.COMPOUND_LITERAL:
         // Compound literal has the type specified in the literal
+        return { type: BuiltinTypes.INT, isError: false };
+
+      case NodeType.TERNARY_EXPRESSION:
+        // Ternary expression: condition ? expr1 : expr2
+        // Returns the type of expr1 (or expr2 if expr1 is void)
+        return { type: BuiltinTypes.INT, isError: false };
+
+      case NodeType.POSTFIX_EXPRESSION:
+        // Postfix increment/decrement: a++, a--
         return { type: BuiltinTypes.INT, isError: false };
 
       default:
