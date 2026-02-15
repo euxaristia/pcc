@@ -424,8 +424,6 @@ export class Lexer {
         (char === '>' && next === '=') ||
         (char === '&' && next === '&') ||
         (char === '|' && next === '|') ||
-        (char === '<' && next === '<') ||
-        (char === '>' && next === '>') ||
         (char === '+' && next === '+') ||
         (char === '-' && next === '-') ||
         (char === '-' && next === '>') ||
@@ -447,11 +445,26 @@ export class Lexer {
       };
     }
     
-    // Three-character operators (<<=, >>=, and ellipsis)
-    if ((char === '<' && next === '<' && this.peek(2) === '=') ||
-        (char === '>' && next === '>' && this.peek(2) === '=')) {
-      this.advance();
-      this.advance();
+    // Three-character operators (<<=, >>=, and ellipsis) - must check before << and >>
+    // Note: peek(1) because after advance(), position is at the second char
+    // We only advance() twice - once for the second char and once for the third char
+    // The initial advance() at the start of readOperator() already consumed the first char
+    if ((char === '<' && next === '<' && this.peek(1) === '=') ||
+        (char === '>' && next === '>' && this.peek(1) === '=')) {
+      this.advance();  // consume second char
+      this.advance();  // consume third char
+      const value = this.input.substring(start, this.position);
+      return {
+        type: this.getOperatorTokenType(value),
+        value,
+        line: startLine,
+        column: startColumn,
+      };
+    }
+    
+    // Two-character shift operators (<<, >>) - must check after <<= and >>
+    if ((char === '<' && next === '<') ||
+        (char === '>' && next === '>')) {
       this.advance();
       const value = this.input.substring(start, this.position);
       return {
@@ -463,10 +476,10 @@ export class Lexer {
     }
     
     // Ellipsis (...)
-    if (char === '.' && next === '.' && this.peek(2) === '.') {
-      this.advance();
-      this.advance();
-      this.advance();
+    // Note: peek(1) because after advance(), position is at the second char
+    if (char === '.' && next === '.' && this.peek(1) === '.') {
+      this.advance();  // consume second '.'
+      this.advance();  // consume third '.'
       const value = this.input.substring(start, this.position);
       return {
         type: this.getOperatorTokenType(value),
