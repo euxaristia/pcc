@@ -167,7 +167,9 @@ export class Preprocessor {
       try {
         const { readFileSync } = require('fs');
         const content = readFileSync(fullPath, 'utf-8');
-        return content;
+        
+        // Process the included content through the preprocessor
+        return this.preprocessInclude(content, fullPath);
       } catch (e) {
         // Try next path
       }
@@ -176,28 +178,96 @@ export class Preprocessor {
     // Fallback: just comment it out
     return `// Included: ${fileName}`;
   }
+  
+  private preprocessInclude(source: string, fileName: string): string {
+    // Handle backslash line continuations
+    const normalized = source.replace(/\\\n/g, '');
+    const lines = normalized.split('\n');
+    const output: string[] = [];
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      
+      // Skip preprocessor directives in included files (they'll be handled when defined)
+      // But process actual code and expand macros
+      if (trimmed.startsWith('#define')) {
+        this.handleDefine(trimmed);
+        continue; // Don't output #define lines
+      } else if (trimmed.startsWith('#undef')) {
+        this.handleUndef(trimmed);
+        continue;
+      } else if (trimmed.startsWith('#include')) {
+        // Recursively include
+        const included = this.handleInclude(trimmed);
+        if (included) {
+          output.push(included);
+        }
+        continue;
+      } else if (trimmed.startsWith('#if') || trimmed.startsWith('#ifdef') || 
+                 trimmed.startsWith('#ifndef') || trimmed.startsWith('#elif') ||
+                 trimmed.startsWith('#endif') || trimmed.startsWith('#else')) {
+        // Skip conditional directives in included files for simplicity
+        continue;
+      } else if (trimmed.startsWith('#')) {
+        // Unknown directive, skip
+        continue;
+      }
+      
+      // Regular code - expand macros and output
+      const expanded = this.expandMacros(line);
+      if (expanded.trim() || output.length > 0) {
+        output.push(expanded);
+      }
+    }
+    
+    return output.join('\n');
+  }
 
   private expandMacros(line: string): string {
+    // Don't expand macros inside macro definitions
+    if (line.trim().startsWith('#define')) {
+      return line;
+    }
+    
     let result = line;
     let changed = true;
     let iterations = 0;
-    const maxIterations = 10; // Prevent infinite loops
+    const maxIterations = 10;
 
     while (changed && iterations < maxIterations) {
       changed = false;
       iterations++;
 
-      // Replace known macros
+      // Replace object-like macros
       for (const [name, macro] of this.macros) {
         if (macro.args) {
-          // Function-like macro - more complex, skip for now
-          continue;
+          continue; // Skip function-like macros for now
         }
 
-        // Match whole word only
         const regex = new RegExp(`\\b${name}\\b`, 'g');
         if (regex.test(result)) {
           result = result.replace(regex, macro.body);
+          changed = true;
+        }
+      }
+
+      // Handle simple function-like macros: name(args)
+      for (const [name, macro] of this.macros) {
+        if (!macro.args) continue;
+        
+        // Match function-like macro invocation: name(args)
+        const funcRegex = new RegExp(`${name}\\s*\\(([^)]*)\\)`, 'g');
+        const match = funcRegex.exec(result);
+        if (match) {
+          const args = match[1].split(',').map(a => a.trim());
+          let body = macro.body;
+          
+          // Replace arguments in body
+          for (let i = 0; i < macro.args.length && i < args.length; i++) {
+            body = body.replace(new RegExp(`\\b${macro.args[i]}\\b`, 'g'), args[i]);
+          }
+          
+          result = result.replace(funcRegex, body);
           changed = true;
         }
       }
