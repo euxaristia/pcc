@@ -50,9 +50,20 @@ export interface Symbol {
   parameters?: Array<{ name: string; type: DataType }>; // For functions
 }
 
+export interface StructMember {
+  name: string;
+  type: DataType;
+}
+
+export interface StructInfo {
+  name: string;
+  members: Map<string, StructMember>;
+}
+
 export class SymbolTable {
   private symbols: Map<string, Symbol[]> = new Map();
   private scopeLevel: number = 0;
+  private structDefinitions: Map<string, StructInfo> = new Map();
 
   enterScope(): void {
     this.scopeLevel++;
@@ -110,5 +121,13 @@ export class SymbolTable {
       }
     }
     return result;
+  }
+
+  registerStruct(info: StructInfo): void {
+    this.structDefinitions.set(info.name, info);
+  }
+
+  getStruct(name: string): StructInfo | undefined {
+    return this.structDefinitions.get(name);
   }
 }

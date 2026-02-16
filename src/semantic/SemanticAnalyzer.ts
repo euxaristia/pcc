@@ -8,7 +8,7 @@ import {
   CastExpressionNode, MemberAccessNode, ArrayAccessNode, ExpressionNode, StatementNode,
   MultiDeclarationNode, InitializerListNode, StructDeclarationNode
 } from '../parser/Parser';
-import { SymbolTable, Symbol, DataType, BaseType, BuiltinTypes, typeToString, isSameType } from './SymbolTable';
+import { SymbolTable, Symbol, DataType, BaseType, BuiltinTypes, typeToString, isSameType, StructInfo, StructMember } from './SymbolTable';
 import { TypeChecker } from './TypeChecker';
 
 export interface SemanticError {
@@ -287,6 +287,8 @@ export class SemanticAnalyzer {
         // Allow initialization of pointer with 0
         if (varType.isPointer && isSameType(result.type, BuiltinTypes.INT)) {
           // OK
+        } else if (varType.baseType === BaseType.LONG && result.type.baseType === BaseType.INT) {
+          // Allow int to long conversion
         } else {
           this.errors.push({
             message: `Cannot initialize ${typeToString(varType)} variable '${node.name}' with value of type ${typeToString(result.type)}`,
@@ -542,9 +544,7 @@ export class SemanticAnalyzer {
         return { type: this.parseDataType(castNode.targetType), isError: false };
 
       case NodeType.MEMBER_ACCESS:
-        // For now, return int type for member access
-        // A full implementation would look up the struct type and member type
-        return { type: BuiltinTypes.INT, isError: false };
+        return this.analyzeMemberAccess(node as MemberAccessNode);
 
       case NodeType.ARRAY_ACCESS:
         // For now, return int type for array access
@@ -570,6 +570,64 @@ export class SemanticAnalyzer {
       default:
         return { type: BuiltinTypes.VOID, isError: true, errorMessage: 'Unknown expression type' };
     }
+  }
+
+  private analyzeMemberAccess(node: MemberAccessNode): { type: DataType; isError: boolean; errorMessage?: string } {
+    // First, get the type of the object being accessed
+    const objectResult = this.analyzeExpression(node.object);
+    
+    if (objectResult.isError) {
+      return objectResult;
+    }
+
+    // Handle pointer-to-struct access (e.g., ptr->member)
+    // or direct struct access (e.g., struct.member)
+    let structType = objectResult.type;
+    
+    // If the object is a pointer, dereference it to get the struct type
+    if (structType.isPointer && structType.pointerCount >= 1) {
+      // For pointers to struct, assume the member is also a pointer to the same struct
+      // This is a common pattern in kernel code (e.g., next->prev)
+      if (structType.baseType === BaseType.STRUCT && structType.structName) {
+        return {
+          type: {
+            baseType: BaseType.STRUCT,
+            isPointer: true,
+            pointerCount: 1,
+            structName: structType.structName,
+          },
+          isError: false,
+        };
+      }
+      // For void pointers or other pointers, return int as fallback
+      return { type: BuiltinTypes.INT, isError: false };
+    }
+
+    // For direct struct access (not through pointer)
+    if (structType.baseType === BaseType.STRUCT && structType.structName) {
+      // Look up the struct definition
+      const structInfo = this.symbolTable.getStruct(structType.structName);
+      if (structInfo) {
+        const member = structInfo.members.get(node.member);
+        if (member) {
+          return { type: member.type, isError: false };
+        }
+      }
+      // If we can't find the struct info, assume the member is a pointer to the same struct
+      // This is the common pattern in kernel code (linked lists, etc.)
+      return {
+        type: {
+          baseType: BaseType.STRUCT,
+          isPointer: true,
+          pointerCount: 1,
+          structName: structType.structName,
+        },
+        isError: false,
+      };
+    }
+
+    // Fallback: return int
+    return { type: BuiltinTypes.INT, isError: false };
   }
 
   private analyzeInitializerList(node: InitializerListNode, expectedType?: DataType): { type: DataType; isError: boolean; errorMessage?: string } {

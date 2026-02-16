@@ -291,25 +291,45 @@ export class IRGenerator {
     let targetAddr: IRValue;
 
     if (assign.target.type === NodeType.IDENTIFIER) {
-      const addr = this.context.valueMap.get(assign.target.name);
+      const targetName = (assign.target as IdentifierNode).name;
+      const addr = this.context.valueMap.get(targetName);
       if (!addr) {
-        throw new Error(`Variable ${assign.target.name} not declared`);
+        // Check if it's a global variable
+        const global = this.module.globals.find(g => g.name === targetName);
+        if (global) {
+          targetAddr = createValue(global.name, IRType.PTR);
+        } else {
+          throw new Error(`Variable ${targetName} not declared`);
+        }
+      } else {
+        targetAddr = addr;
       }
-      targetAddr = addr;
     } else if (assign.target.type === NodeType.MEMBER_ACCESS) {
       // For now, treat member access like a variable by finding the base
       const memberAccess = assign.target as MemberAccessNode;
       let current: any = memberAccess.object;
+      // Handle chained member access: a.b.c -> get 'a'
       while (current.type === NodeType.MEMBER_ACCESS) {
         current = current.object;
+      }
+      // Handle dereference: (*ptr).member -> get 'ptr'
+      if (current.type === NodeType.UNARY_EXPRESSION && current.operator === '*') {
+        current = current.operand;
       }
       if (current.type === NodeType.IDENTIFIER) {
         const baseName = current.name;
         const addr = this.context.valueMap.get(baseName);
         if (!addr) {
-          throw new Error(`Variable ${baseName} not declared`);
+          // Check if it's a global variable
+          const global = this.module.globals.find(g => g.name === baseName);
+          if (global) {
+            targetAddr = createValue(global.name, IRType.PTR);
+          } else {
+            throw new Error(`Variable ${baseName} not declared`);
+          }
+        } else {
+          targetAddr = addr;
         }
-        targetAddr = addr;
       } else {
         throw new Error('Unsupported member access target');
       }
@@ -715,12 +735,42 @@ export class IRGenerator {
 
     // Handle address-of (&) and dereference (*)
     if (unary.operator === '&') {
+      // Handle taking address of member access: &ptr->member or &struct.member
+      if (unary.operand.type === NodeType.MEMBER_ACCESS) {
+        const memberAccess = unary.operand as MemberAccessNode;
+        let current: any = memberAccess.object;
+        // Handle dereference: (*ptr).member -> get 'ptr'
+        while (current.type === NodeType.MEMBER_ACCESS) {
+          current = current.object;
+        }
+        if (current.type === NodeType.UNARY_EXPRESSION && current.operator === '*') {
+          current = current.operand;
+        }
+        if (current.type === NodeType.IDENTIFIER) {
+          const ident = current as IdentifierNode;
+          const varAddr = this.context.valueMap.get(ident.name);
+          if (!varAddr) {
+            // Check if it's a global variable
+            const global = this.module.globals.find(g => g.name === ident.name);
+            if (global) {
+              return createValue(global.name, IRType.PTR);
+            }
+            throw new Error(`Variable ${ident.name} not declared`);
+          }
+          return varAddr;
+        }
+      }
       if (unary.operand.type !== NodeType.IDENTIFIER) {
         throw new Error('Cannot take address of non-identifier');
       }
       const ident = unary.operand as IdentifierNode;
       const varAddr = this.context.valueMap.get(ident.name);
       if (!varAddr) {
+        // Check if it's a global variable
+        const global = this.module.globals.find(g => g.name === ident.name);
+        if (global) {
+          return createValue(global.name, IRType.PTR);
+        }
         throw new Error(`Variable ${ident.name} not declared`);
       }
       return varAddr;

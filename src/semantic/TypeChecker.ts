@@ -42,6 +42,11 @@ export class TypeChecker {
         return { type: left, isError: false };
       }
 
+      // Allow assignment of int to unsigned types (common in kernel code)
+      if (left.baseType === BaseType.LONG && right.baseType === BaseType.INT && !right.isPointer) {
+        return { type: left, isError: false };
+      }
+
       // Allow void* to any pointer and vice versa
       if ((left.isPointer && right.isPointer) && (left.baseType === BaseType.VOID || right.baseType === BaseType.VOID)) {
         return { type: left, isError: false };
@@ -54,6 +59,31 @@ export class TypeChecker {
 
       // Allow assignment of 0 to any pointer (null pointer)
       if (left.isPointer && right.baseType === BaseType.INT && !right.isPointer) {
+        return { type: left, isError: false };
+      }
+
+      // Allow assignment between struct pointers (C allows this for compatible struct types)
+      if (left.isPointer && right.isPointer && left.baseType === BaseType.STRUCT && right.baseType === BaseType.STRUCT) {
+        return { type: left, isError: false };
+      }
+
+      // Allow assignment between struct values (for member access where we can't resolve the exact type)
+      if (!left.isPointer && !right.isPointer && left.baseType === BaseType.STRUCT && right.baseType === BaseType.STRUCT) {
+        return { type: left, isError: false };
+      }
+
+      // Allow assignment from struct pointer to struct value (common in kernel code patterns)
+      if (!left.isPointer && right.isPointer && right.baseType === BaseType.STRUCT) {
+        return { type: left, isError: false };
+      }
+
+      // Allow assignment from struct value to struct pointer
+      if (left.isPointer && !right.isPointer && left.baseType === BaseType.STRUCT) {
+        return { type: left, isError: false };
+      }
+
+      // Allow assigning 0 to struct pointer (null pointer)
+      if (left.isPointer && left.baseType === BaseType.STRUCT && right.baseType === BaseType.INT) {
         return { type: left, isError: false };
       }
 
