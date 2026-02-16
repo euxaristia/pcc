@@ -2106,6 +2106,12 @@ export class Parser {
       
       // Check if it's a type cast or compound literal by looking for a type keyword or typedef
       const nextToken = this.peek();
+      // Also check for identifiers that could be types (like uintptr_t) - they are followed by ) or *
+      const couldBeType = nextToken.type === TokenType.IDENTIFIER && 
+        (this.typedefs.has(nextToken.value) || 
+         this.peek(1).type === TokenType.RIGHT_PAREN || 
+         this.peek(1).type === TokenType.MULTIPLY);
+      
       if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || 
           this.check(TokenType.VOID) || this.check(TokenType.STRUCT) ||
           this.check(TokenType.LONG) || this.check(TokenType.SHORT) ||
@@ -2113,7 +2119,7 @@ export class Parser {
           this.check(TokenType.FLOAT) || this.check(TokenType.DOUBLE) ||
           this.check(TokenType.CONST) || this.check(TokenType.VOLATILE) ||
           this.check(TokenType.UNION) || this.check(TokenType.ENUM) ||
-          (nextToken.type === TokenType.IDENTIFIER && this.typedefs.has(nextToken.value))) {
+          couldBeType) {
         // It's a type cast OR compound literal
         const targetType = this.parseTypeSpecifier();
         
@@ -2146,11 +2152,27 @@ export class Parser {
           
           // It's a type cast: (type)expression
           this.advance(); // consume ')'
-          const operand = this.parseUnary(); // Cast has high precedence
+          const operand = this.parseMultiplicative(); // Cast has high precedence, but allow * / % after
+          
+          // Check for additive operators after the cast operand
+          let result: ExpressionNode = operand;
+          while (this.match(TokenType.PLUS, TokenType.MINUS)) {
+            const operator = this.previous().value;
+            const right = this.parseMultiplicative();
+            result = {
+              type: NodeType.BINARY_EXPRESSION,
+              operator,
+              left: result,
+              right,
+              line: result.line,
+              column: result.column,
+            };
+          }
+          
           return {
             type: NodeType.CAST_EXPRESSION,
             targetType,
-            operand,
+            operand: result,
             line: targetType.line,
             column: targetType.column,
           };
