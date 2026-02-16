@@ -92,8 +92,25 @@ A complete C compiler implementation with modern software engineering practices,
 git clone https://github.com/euxaristia/pcc.git
 cd pcc
 bun install
-bun run build
 ```
+
+### Building Native Binary (Optional)
+For faster compilation, build a native binary:
+```bash
+bun build --compile --outfile pcc src/compile.ts
+```
+This creates a ~100MB standalone executable.
+
+### Compilation
+```bash
+# Using native binary (fastest)
+./pcc examples/simple.c
+
+# Using bun
+bun run src/compile.ts examples/simple.c
+
+# Or after building with tsc
+./dist/compile.js examples/simple.c
 
 > **Note**: Always use `bun` to run the compiler, not `npx` or `ts-node`. The project uses bun-specific features.
 
