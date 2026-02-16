@@ -38,6 +38,18 @@ pcc is a TypeScript-based C compiler targeting x86-64 Linux. It produces valid E
 
 Run tests with: `bun test`
 
+## Version Control
+
+**After each tested working change, commit and push immediately:**
+
+```bash
+git add -A
+git commit -m "Description of changes"
+git push
+```
+
+This ensures changes are saved and can be reviewed incrementally.
+
 ## Environment Variables
 
 - `PCC_VERBOSE=1` - Enable verbose output
