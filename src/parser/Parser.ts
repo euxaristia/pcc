@@ -1093,6 +1093,7 @@ export class Parser {
     }
     
     // For casts, support basic function pointer types like void(*)(void) or void(**)(void)
+    // BUT: don't do this for declarations like int (*func_ptr)(void) where (*func_ptr) is followed by ()
     if (this.check(TokenType.LEFT_PAREN)) {
       const savedPos = this.current;
       this.advance(); // consume '('
@@ -1107,29 +1108,48 @@ export class Parser {
         // For casts like void(*)(void), there might not be an identifier next
         if (this.check(TokenType.IDENTIFIER)) {
           // Check if followed by [ (array) or ( (function) - if so, this is a declaration not a cast
+          // Also check for ) followed by ( - that's a function pointer declaration
           const nextAfterIdent = this.peek(1).type;
           if (nextAfterIdent === TokenType.LEFT_BRACKET || nextAfterIdent === TokenType.LEFT_PAREN) {
             // This is likely a declaration like void (*func)(void) or void (*func_array[4]), not a cast
             this.current = savedPos;
+          } else if (nextAfterIdent === TokenType.RIGHT_PAREN) {
+            // After identifier we have ) - check what comes after )
+            const afterRightParen = this.peek(2);
+            if (afterRightParen.type === TokenType.LEFT_PAREN) {
+              // This is a function pointer declaration like (*func_ptr)(void)
+              this.current = savedPos;
+            } else {
+              // It's a cast with an identifier as the type - consume the identifier and continue
+              this.advance(); // consume the identifier (type name)
+            }
           } else {
             // It's a cast with an identifier as the type - consume the identifier and continue
             this.advance(); // consume the identifier (type name)
           }
         } else {
-          this.consume(TokenType.RIGHT_PAREN, "Expected ')' after * in function pointer type");
-          
-          // Parse parameter list for function pointer type
-          this.consume(TokenType.LEFT_PAREN, "Expected '(' after function pointer type");
-          if (this.check(TokenType.VOID)) {
-            this.advance(); // consume 'void'
-          } else if (!this.check(TokenType.RIGHT_PAREN)) {
-            // Parse parameters for real
-            const params = this.parseParameters();
+          // Check: after (*...) ) , if there's another ( it's a declaration not a cast
+          // e.g., int (*func_ptr)(void) - after ) we have (
+          const afterRightParen = this.peek(1);
+          if (afterRightParen.type === TokenType.LEFT_PAREN) {
+            // This is a function pointer declaration, not a cast - backtrack
+            this.current = savedPos;
+          } else {
+            this.consume(TokenType.RIGHT_PAREN, "Expected ')' after * in function pointer type");
+            
+            // Parse parameter list for function pointer type
+            this.consume(TokenType.LEFT_PAREN, "Expected '(' after function pointer type");
+            if (this.check(TokenType.VOID)) {
+              this.advance(); // consume 'void'
+            } else if (!this.check(TokenType.RIGHT_PAREN)) {
+              // Parse parameters for real
+              const params = this.parseParameters();
+            }
+            this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer type parameters");
+            
+            // Build function pointer type name for casts
+            typeName = `${typeName}(${pointerStars})()`;
           }
-          this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer type parameters");
-          
-          // Build function pointer type name for casts
-          typeName = `${typeName}(${pointerStars})()`;
         }
       } else {
         // Not a function pointer type, backtrack
