@@ -9,6 +9,9 @@ import { generateX8664Assembly } from './codegen/AssemblyGenerator';
 import { generateELFObjectFile } from './codegen/ELFGenerator';
 import { prettyPrintIR } from './codegen/IR';
 
+const VERBOSE = process.env.PCC_VERBOSE === '1';
+const TOKEN_DEBUG = process.env.PCC_TOKENS === '1';
+
 /**
  * C Compiler Frontend Demo
  * 
@@ -52,14 +55,14 @@ async function main() {
     // Read source file
     const sourceCode = await readFile(sourceFile, 'utf-8');
     console.log(`=== Compiling ${sourceFile} ===`);
-    console.log(`\n=== Source Code ===\n${sourceCode}`);
+    if (VERBOSE) console.log(`\n=== Source Code ===\n${sourceCode}`);
     
     // Phase 1: Lexical Analysis
     console.log(`\n=== Phase 1: Lexical Analysis ===`);
     const lexer = new Lexer(sourceCode);
     const tokens = lexer.tokenize();
     console.log(`Generated ${tokens.length} tokens`);
-    tokens.forEach((token, i) => {
+    if (TOKEN_DEBUG) tokens.forEach((token, i) => {
       console.log(`  [${i}] ${token.type}: '${token.value}' at ${token.line}:${token.column}`);
     });
     
@@ -88,12 +91,12 @@ async function main() {
     const irGenerator = new IRGenerator();
     const ir = irGenerator.generate(ast);
     console.log(`Generated IR with ${ir.functions.length} functions`);
-    console.log(`IR:\n${prettyPrintIR(ir)}`);
+    if (VERBOSE) console.log(`IR:\n${prettyPrintIR(ir)}`);
     
     // Phase 5: Assembly Generation
     console.log(`\n=== Phase 5: Assembly Generation ===`);
     const assembly = generateX8664Assembly(ir);
-    console.log(`Generated x86-64 assembly:\n${assembly}`);
+    if (VERBOSE) console.log(`Generated x86-64 assembly:\n${assembly}`);
     
     // Phase 6: ELF Generation
     console.log(`\n=== Phase 6: ELF Object File Generation ===`);

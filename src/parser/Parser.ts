@@ -1,5 +1,11 @@
 import { Token, TokenType } from '../lexer/Lexer';
 
+const DEBUG = process.env.PCC_PARSER_DEBUG === '1';
+
+function debugLog(...args: any[]) {
+  if (DEBUG) debugLog(...args);
+}
+
 export enum NodeType {
   // Program structure
   PROGRAM = 'PROGRAM',
@@ -590,13 +596,13 @@ export class Parser {
       storageClasses.push(this.previous().value);
     }
     
-    console.log(`parseDeclaration: next token after storage classes: ${this.peek().type} ${this.peek().value}`);
-    console.log(`About to call parseTypeSpecifier, current token: ${this.peek().type} '${this.peek().value}' at ${this.peek().line}:${this.peek().column}`);
+    debugLog(`parseDeclaration: next token after storage classes: ${this.peek().type} ${this.peek().value}`);
+    debugLog(`About to call parseTypeSpecifier, current token: ${this.peek().type} '${this.peek().value}' at ${this.peek().line}:${this.peek().column}`);
     const typeSpecifier = this.parseTypeSpecifier();
-    console.log(`After parseTypeSpecifier: typeName=${typeSpecifier.typeName}, next token: ${this.peek().type} '${this.peek().value}' at ${this.peek().line}:${this.peek().column}`);
-    console.log(`DEBUG: this.current=${this.current}, tokens.length=${this.tokens.length}`);
-    console.log(`DEBUG: tokens[${this.current}]=${this.tokens[this.current]?.type} '${this.tokens[this.current]?.value}'`);
-    console.log(`Will now check: this.check(TokenType.IDENTIFIER)=${this.check(TokenType.IDENTIFIER)}, this.check(TokenType.LEFT_PAREN)=${this.check(TokenType.LEFT_PAREN)}`);
+    debugLog(`After parseTypeSpecifier: typeName=${typeSpecifier.typeName}, next token: ${this.peek().type} '${this.peek().value}' at ${this.peek().line}:${this.peek().column}`);
+    debugLog(`DEBUG: this.current=${this.current}, tokens.length=${this.tokens.length}`);
+    debugLog(`DEBUG: tokens[${this.current}]=${this.tokens[this.current]?.type} '${this.tokens[this.current]?.value}'`);
+    debugLog(`Will now check: this.check(TokenType.IDENTIFIER)=${this.check(TokenType.IDENTIFIER)}, this.check(TokenType.LEFT_PAREN)=${this.check(TokenType.LEFT_PAREN)}`);
     
     // Check if we have an identifier (might be an anonymous struct/union/enum if followed by ;)
     if (!this.check(TokenType.IDENTIFIER)) {
@@ -695,7 +701,7 @@ export class Parser {
           column: typeSpecifier.column,
         };
         
-        console.log(`Function pointer declaration: ${name}, next token: ${this.peek().type} ${this.peek().value}`);
+        debugLog(`Function pointer declaration: ${name}, next token: ${this.peek().type} ${this.peek().value}`);
         return declaration;
       } else {
         // Not a function pointer, backtrack and try normal identifier
@@ -767,7 +773,7 @@ export class Parser {
           column: typeSpecifier.column,
         };
         
-        console.log(`Function pointer declaration: ${name}, next token: ${this.peek().type} ${this.peek().value}`);
+        debugLog(`Function pointer declaration: ${name}, next token: ${this.peek().type} ${this.peek().value}`);
         return declaration;
       } else {
         // Not a function pointer, backtrack and try normal identifier
@@ -784,19 +790,19 @@ export class Parser {
 
     const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected identifier after type');
     const name = nameToken.value;
-    console.log(`After consuming identifier '${name}', next token: ${this.peek().type} '${this.peek().value}' at ${this.peek().line}:${this.peek().column}`);
-    console.log(`DEBUG: After consume, this.current=${this.current}`);
+    debugLog(`After consuming identifier '${name}', next token: ${this.peek().type} '${this.peek().value}' at ${this.peek().line}:${this.peek().column}`);
+    debugLog(`DEBUG: After consume, this.current=${this.current}`);
     
     // Check for function pointer array declarations like void (*func_ptr_array[4])
     if (this.check(TokenType.LEFT_PAREN)) {
-      console.log(`DEBUG: Entering LEFT_PAREN check block, this.current=${this.current}`);
+      debugLog(`DEBUG: Entering LEFT_PAREN check block, this.current=${this.current}`);
       const savedPos = this.current;
       this.advance(); // consume '('
-      console.log(`DEBUG: After advance past '(', this.current=${this.current}, peek=${this.peek().type}`);
+      debugLog(`DEBUG: After advance past '(', this.current=${this.current}, peek=${this.peek().type}`);
       
       // Check if this is a function pointer array: type (*name[size])
       if (this.match(TokenType.MULTIPLY)) {
-        console.log(`DEBUG: Matched MULTIPLY`);
+        debugLog(`DEBUG: Matched MULTIPLY`);
         // This is a function pointer or function pointer array
         this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer");
         
@@ -832,13 +838,13 @@ export class Parser {
         
         // Not a function pointer array, backtrack and parse normally
         this.current = savedPos;
-        console.log(`DEBUG: Backtracked to savedPos=${savedPos}`);
+        debugLog(`DEBUG: Backtracked to savedPos=${savedPos}`);
       } else {
         // Not a function pointer array, backtrack
         this.current = savedPos;
-        console.log(`DEBUG: Backtracked to savedPos=${savedPos}`);
+        debugLog(`DEBUG: Backtracked to savedPos=${savedPos}`);
       }
-      console.log(`DEBUG: Exiting LEFT_PAREN block without returning, this.current=${this.current}`);
+      debugLog(`DEBUG: Exiting LEFT_PAREN block without returning, this.current=${this.current}`);
     }
     
     if (this.check(TokenType.LEFT_PAREN)) {
