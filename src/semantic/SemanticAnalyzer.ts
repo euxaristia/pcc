@@ -6,7 +6,7 @@ import {
   IdentifierNode, NumberLiteralNode, StringLiteralNode, CharacterLiteralNode,
   TypeSpecifierNode, ParameterNode, CompoundStatementNode, SizeofExpressionNode,
   CastExpressionNode, MemberAccessNode, ArrayAccessNode, ExpressionNode, StatementNode,
-  MultiDeclarationNode, InitializerListNode, StructDeclarationNode
+  MultiDeclarationNode, InitializerListNode, StructDeclarationNode, TypedefDeclarationNode
 } from '../parser/Parser';
 import { SymbolTable, Symbol, DataType, BaseType, BuiltinTypes, typeToString, isSameType, StructInfo, StructMember } from './SymbolTable';
 import { TypeChecker } from './TypeChecker';
@@ -23,6 +23,7 @@ export class SemanticAnalyzer {
   private typeChecker: TypeChecker;
   private errors: SemanticError[] = [];
   private currentFunction: FunctionDeclarationNode | null = null;
+  private typedefs: Map<string, TypeSpecifierNode> = new Map();
 
   constructor() {
     this.symbolTable = new SymbolTable();
@@ -159,10 +160,13 @@ export class SemanticAnalyzer {
   }
 
   private analyzeProgram(node: ProgramNode): void {
-    // First pass: declare all functions
+    // First pass: declare all functions and typedefs
     for (const declaration of node.declarations) {
       if (declaration.type === NodeType.FUNCTION_DECLARATION) {
         this.declareFunction(declaration as FunctionDeclarationNode);
+      } else if (declaration.type === NodeType.TYPEDEF_DECLARATION) {
+        const typedefNode = declaration as TypedefDeclarationNode;
+        this.typedefs.set(typedefNode.alias, typedefNode.originalType);
       }
     }
 
@@ -289,6 +293,18 @@ export class SemanticAnalyzer {
           // OK
         } else if (varType.baseType === BaseType.LONG && result.type.baseType === BaseType.INT) {
           // Allow int to long conversion
+        } else if (varType.isPointer && result.type.isPointer) {
+          // Allow void* to other pointer types
+          if (result.type.baseType === BaseType.VOID) {
+            // OK - void* can be assigned to any pointer
+          } else {
+            this.errors.push({
+              message: `Cannot initialize ${typeToString(varType)} variable '${node.name}' with value of type ${typeToString(result.type)}`,
+              line: node.line,
+              column: node.column,
+              node,
+            });
+          }
         } else {
           this.errors.push({
             message: `Cannot initialize ${typeToString(varType)} variable '${node.name}' with value of type ${typeToString(result.type)}`,
@@ -770,6 +786,18 @@ export class SemanticAnalyzer {
   }
 
   private parseDataType(typeNode: TypeSpecifierNode): DataType {
+    // Check if this is a typedef
+    if (this.typedefs.has(typeNode.typeName)) {
+      const originalType = this.typedefs.get(typeNode.typeName)!;
+      const resolved = this.parseDataType(originalType);
+      // Preserve pointer count from the original node
+      return {
+        ...resolved,
+        isPointer: resolved.isPointer || typeNode.isPointer,
+        pointerCount: resolved.pointerCount + typeNode.pointerCount,
+      };
+    }
+
     let baseType: BaseType;
     let structName: string | undefined;
 

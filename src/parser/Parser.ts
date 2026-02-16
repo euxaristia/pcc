@@ -140,6 +140,9 @@ export interface AsmStatementNode extends ASTNode {
   type: NodeType.ASM_STATEMENT;
   assembly: string;
   isVolatile: boolean;
+  outputConstraints?: string[];
+  inputConstraints?: string[];
+  clobberRegisters?: string[];
 }
 
 export interface ExportSymbolNode extends ASTNode {
@@ -2336,7 +2339,15 @@ export class Parser {
             };
           }
           
-          // Now we have the cast result in expr
+          // Now wrap the expression in a CastExpression node
+          expr = {
+            type: NodeType.CAST_EXPRESSION,
+            targetType,
+            operand: expr,
+            line: targetType.line,
+            column: targetType.column,
+          };
+          
           // Continue to handle any outer unary operators (like * for dereference)
         }
       } else {
@@ -2582,11 +2593,16 @@ export class Parser {
       assembly += this.advance().value;
     }
     
+    const outputConstraints: string[] = [];
+    const inputConstraints: string[] = [];
+    const clobberRegisters: string[] = [];
+    
     // Parse optional output operands (starts with ':')
     if (this.match(TokenType.COLON)) {
       if (!this.check(TokenType.COLON) && !this.check(TokenType.RIGHT_PAREN)) {
         do {
-          this.parseAsmConstraint();
+          outputConstraints.push(this.parseAsmConstraint());
+          // Handle optional expression in parentheses: "=r" (var)
           if (this.match(TokenType.LEFT_PAREN)) {
             this.parseExpression();
             this.consume(TokenType.RIGHT_PAREN, "Expected ')' after asm expression");
@@ -2599,7 +2615,8 @@ export class Parser {
     if (this.match(TokenType.COLON)) {
       if (!this.check(TokenType.COLON) && !this.check(TokenType.RIGHT_PAREN)) {
         do {
-          this.parseAsmConstraint();
+          inputConstraints.push(this.parseAsmConstraint());
+          // Handle optional expression in parentheses: "r" (var)
           if (this.match(TokenType.LEFT_PAREN)) {
             this.parseExpression();
             this.consume(TokenType.RIGHT_PAREN, "Expected ')' after asm expression");
@@ -2612,7 +2629,7 @@ export class Parser {
     if (this.match(TokenType.COLON)) {
       if (!this.check(TokenType.RIGHT_PAREN)) {
         do {
-          this.parseAsmConstraint();
+          clobberRegisters.push(this.parseAsmConstraint());
         } while (this.match(TokenType.COMMA));
       }
     }
@@ -2624,6 +2641,9 @@ export class Parser {
       type: NodeType.ASM_STATEMENT,
       assembly: assembly.replace(/^"(.*)"$/, '$1'), // Remove quotes
       isVolatile,
+      outputConstraints: outputConstraints.length > 0 ? outputConstraints : undefined,
+      inputConstraints: inputConstraints.length > 0 ? inputConstraints : undefined,
+      clobberRegisters: clobberRegisters.length > 0 ? clobberRegisters : undefined,
       line: this.previous().line,
       column: this.previous().column,
     };

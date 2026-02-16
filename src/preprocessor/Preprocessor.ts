@@ -152,6 +152,28 @@ export class Preprocessor {
     if (!match) return null;
 
     const fileName = match[1];
+    const isSystemInclude = line.includes('<');
+
+    // Try to find the file
+    const searchPaths = isSystemInclude 
+      ? [...this.includePaths, '/home/euxaristia/Projects/pcc/include', '.']
+      : ['.', ...this.includePaths];
+
+    for (const path of searchPaths) {
+      const fullPath = path === '.' 
+        ? fileName 
+        : `${path}/${fileName}`;
+      
+      try {
+        const { readFileSync } = require('fs');
+        const content = readFileSync(fullPath, 'utf-8');
+        return content;
+      } catch (e) {
+        // Try next path
+      }
+    }
+
+    // Fallback: just comment it out
     return `// Included: ${fileName}`;
   }
 

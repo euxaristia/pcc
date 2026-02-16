@@ -302,8 +302,8 @@ int getInt() {
 }
 `;
       const errors = analyze(code);
-      expect(errors).toHaveLength(1);
-      expect(errors[0].message).toContain('expects to return int, but got char');
+      // In C, char is promoted to int when returned, so this should be allowed
+      expect(errors).toHaveLength(0);
     });
   });
 

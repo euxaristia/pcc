@@ -334,8 +334,25 @@ export class IRGenerator {
       while (current.type === NodeType.MEMBER_ACCESS) {
         current = current.object;
       }
-      // Handle dereference: (*ptr).member -> get 'ptr'
-      if (current.type === NodeType.UNARY_EXPRESSION && current.operator === '*') {
+      // Handle nested dereferences like (*(*ptr).member).something
+      while (current.type === NodeType.UNARY_EXPRESSION && current.operator === '*') {
+        if (current.operand?.type === NodeType.MEMBER_ACCESS) {
+          let nested: any = current.operand;
+          while (nested.type === NodeType.MEMBER_ACCESS) {
+            nested = nested.object;
+          }
+          if (nested.type === NodeType.IDENTIFIER) {
+            current = nested;
+            break;
+          } else if (nested.type === NodeType.UNARY_EXPRESSION) {
+            current = nested.operand;
+            break;
+          }
+        }
+        current = current.operand;
+      }
+      // Also handle case where the base is already an address-of expression: (&var).member
+      if (current.type === NodeType.UNARY_EXPRESSION && current.operator === '&') {
         current = current.operand;
       }
       if (current.type === NodeType.IDENTIFIER) {
@@ -347,13 +364,13 @@ export class IRGenerator {
           if (global) {
             targetAddr = createValue(global.name, IRType.PTR);
           } else {
-            throw new Error(`Variable ${baseName} not declared`);
+            throw new Error(`Variable ${baseName} not declared in member access`);
           }
         } else {
           targetAddr = addr;
         }
       } else {
-        throw new Error('Unsupported member access target');
+        throw new Error(`Unsupported member access target: ${current.type}`);
       }
     } else if (assign.target.type === NodeType.ARRAY_ACCESS) {
       // For now, treat array access like a variable

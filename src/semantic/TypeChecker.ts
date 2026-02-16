@@ -143,6 +143,10 @@ export class TypeChecker {
       if (right.isPointer && isSameType(left, BuiltinTypes.INT)) {
         return { type: BuiltinTypes.INT, isError: false };
       }
+      // Allow pointer-to-pointer comparison (including void*)
+      if (left.isPointer && right.isPointer) {
+        return { type: BuiltinTypes.INT, isError: false };
+      }
 
       return {
         type: BuiltinTypes.INT,
@@ -244,6 +248,18 @@ export class TypeChecker {
     if (expected.baseType === BaseType.VOID && !expected.isPointer) {
       return actual.baseType === BaseType.VOID && !actual.isPointer;
     }
-    return isSameType(expected, actual);
+    // Allow exact match
+    if (isSameType(expected, actual)) {
+      return true;
+    }
+    // Allow numeric promotion: char/short to int, int to long, etc.
+    if (this.isNumeric(expected) && this.isNumeric(actual)) {
+      return true;
+    }
+    // Allow returning a pointer to a more specific type when expecting void*
+    if (expected.isPointer && expected.baseType === BaseType.VOID && actual.isPointer) {
+      return true;
+    }
+    return false;
   }
 }
