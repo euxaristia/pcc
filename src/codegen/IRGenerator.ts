@@ -119,14 +119,24 @@ export class IRGenerator {
   }
 
   private processFunctionDeclaration(funcDecl: FunctionDeclarationNode): void {
-    if (!funcDecl.body) {
-      return;
-    }
     const returnType = this.dataTypeToIRType(this.parseType(funcDecl.returnType));
     const parameters = funcDecl.parameters.map(param => ({
       name: param.name,
       type: this.dataTypeToIRType(this.parseType(param.varType)),
     }));
+
+    // If no body, still register the function declaration
+    if (!funcDecl.body) {
+      const irFunction: IRFunction = {
+        name: funcDecl.name,
+        returnType,
+        parameters,
+        body: [],
+        locals: [],
+      };
+      this.module.functions.push(irFunction);
+      return;
+    }
 
     const irFunction: IRFunction = {
       name: funcDecl.name,
@@ -1216,6 +1226,7 @@ export class IRGenerator {
     // 1. Calculate the element address: base + (index * element_size)
     // 2. Load from that address
     
+    // Handle array access through identifier
     if (expr.array.type === NodeType.IDENTIFIER) {
       const arrayName = (expr.array as IdentifierNode).name;
       let varAddr = this.context.valueMap.get(arrayName);
@@ -1239,6 +1250,40 @@ export class IRGenerator {
       );
       this.context.currentBlock.instructions.push(loadInstr);
       return loadInstr as IRValue;
+    }
+
+    // Handle array access through member access: e.g., structPtr->array[i]
+    if (expr.array.type === NodeType.MEMBER_ACCESS) {
+      const memberAccess = expr.array as MemberAccessNode;
+      let current: any = memberAccess.object;
+      // Handle dereference: (*ptr).member -> get 'ptr'
+      while (current.type === NodeType.MEMBER_ACCESS) {
+        current = current.object;
+      }
+      if (current.type === NodeType.UNARY_EXPRESSION && current.operator === '*') {
+        current = current.operand;
+      }
+      if (current.type === NodeType.IDENTIFIER) {
+        const arrayName = current.name;
+        let varAddr = this.context.valueMap.get(arrayName);
+        if (!varAddr) {
+          // Check for global array
+          const global = this.module.globals.find(g => g.name === arrayName);
+          if (global) {
+            varAddr = createValue(global.name, IRType.PTR);
+          } else {
+            throw new Error(`Variable ${arrayName} not declared`);
+          }
+        }
+        const loadInstr = createInstruction(
+          this.genId(),
+          IROpCode.LOAD,
+          IRType.I32,
+          [varAddr]
+        );
+        this.context.currentBlock.instructions.push(loadInstr);
+        return loadInstr as IRValue;
+      }
     }
     
     throw new Error('Unsupported array access type');
