@@ -95,23 +95,25 @@ bun install
 bun run build
 ```
 
+> **Note**: Always use `bun` to run the compiler, not `npx` or `ts-node`. The project uses bun-specific features.
+
 ### Compilation
 ```bash
-# Compile C file to ELF object
+# Compile C file to ELF object (use bun)
+bun run src/compile.ts examples/simple.c
+
+# Or after building
 ./dist/compile.js examples/simple.c
 
 # Generate executable
 gcc -o program output.o
-
-# Direct compilation with demo
-npx ts-node src/demo.ts examples/fibonacci.c
 ```
 
 ### Command Line Interface
 ```bash
-# Compile multiple files
+# Compile multiple files (use bun)
 for file in *.c; do
-  ./dist/compile.js "$file"
+  bun run src/compile.ts "$file"
 done
 
 # With verbose output
@@ -132,13 +134,12 @@ PICKLE_OUTPUT=asm ./dist/compile.js program.c
 ## 🧪 Building
 
 ### Development Requirements
-- **Node.js** 16+
+- **Bun** (required - always use bun, not npx or ts-node)
 - **TypeScript** 5.0+
-- **NPM** for package management
 
 ### Build from Source
 ```bash
-# Development build
+# Development build (use bun)
 bun run dev     # Watch mode
 
 # Production build
@@ -226,13 +227,13 @@ bun run test:coverage
 
 ### Development Workflow
 ```bash
-# Watch mode for development
+# Watch mode for development (use bun)
 bun run dev
 
 # Build with type checking
 bun run build
 
-# Test specific components
+# Test specific components (use bun)
 bun test -- --testNamePattern="lexer.*"
 
 # Run integration tests
