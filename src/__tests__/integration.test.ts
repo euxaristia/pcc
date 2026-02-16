@@ -5,12 +5,17 @@ import { IRGenerator } from '../codegen/IRGenerator';
 import { generateX8664Assembly } from '../codegen/AssemblyGenerator';
 import { generateELFObjectFile } from '../codegen/ELFGenerator';
 import { prettyPrintIR } from '../codegen/IR';
+import { Preprocessor } from '../preprocessor/Preprocessor';
 
 describe('Complete Compilation Pipeline', () => {
   const compile = (code: string) => {
     try {
+      // Phase 0: Preprocessing
+      const preprocessor = new Preprocessor();
+      const preprocessedCode = preprocessor.preprocess(code);
+      
       // Phase 1: Lexical Analysis
-      const lexer = new Lexer(code);
+      const lexer = new Lexer(preprocessedCode);
       const tokens = lexer.tokenize();
       
       // Phase 2: Parsing
@@ -398,6 +403,91 @@ int main() {
       expect(result.success).toBe(false);
       expect(result.errors.length).toBeGreaterThan(0);
       expect(result.errors[0].message).toContain('not declared');
+    });
+  });
+
+  describe('Preprocessor', () => {
+    it('should expand #define macros', () => {
+      const code = `
+#define FIVE 5
+int main() {
+    return FIVE;
+}
+`;
+      const preprocessor = new Preprocessor();
+      const result = preprocessor.preprocess(code);
+      expect(result).toContain('return 5');
+    });
+
+    it('should handle #ifdef/#endif', () => {
+      const code = `
+#define FOO
+#ifdef FOO
+int main() {
+    return 1;
+}
+#endif
+`;
+      const preprocessor = new Preprocessor();
+      const result = preprocessor.preprocess(code);
+      expect(result).toContain('int main()');
+    });
+
+    it('should skip code in #ifndef when defined', () => {
+      const code = `
+#define BAR
+#ifndef BAR
+int not_included() {
+    return 0;
+}
+#endif
+int main() {
+    return 1;
+}
+`;
+      const preprocessor = new Preprocessor();
+      const result = preprocessor.preprocess(code);
+      expect(result).not.toContain('int not_included()');
+      expect(result).toContain('int main()');
+    });
+
+    it('should define default macros', () => {
+      const code = `
+int main() {
+    return __STDC__;
+}
+`;
+      const preprocessor = new Preprocessor();
+      const result = preprocessor.preprocess(code);
+      expect(result).toContain('return 1');
+    });
+
+    it('should handle #undef', () => {
+      const code = `
+#define FOO 1
+#undef FOO
+#ifdef FOO
+int main() { return 0; }
+#endif
+#ifndef FOO
+int main() { return 1; }
+#endif
+`;
+      const preprocessor = new Preprocessor();
+      const result = preprocessor.preprocess(code);
+      expect(result).toContain('return 1');
+    });
+
+    it('should compile code with macros end-to-end', () => {
+      const code = `
+#define SUCCESS_CODE 42
+int main() {
+    return SUCCESS_CODE;
+}
+`;
+      const result = compile(code);
+      expect(result.success).toBe(true);
+      expect(result.assembly).toContain('main:');
     });
   });
 });

@@ -584,7 +584,7 @@ export class Parser {
     };
   }
 
-  private parseDeclaration(): FunctionDeclarationNode | DeclarationNode | MultiDeclarationNode | null {
+  private parseDeclaration(): FunctionDeclarationNode | DeclarationNode | MultiDeclarationNode | EnumDeclarationNode | null {
     // Handle attributes that can appear before declarations (e.g., __attribute__((aligned(...))))
     while (this.match(TokenType.ATTRIBUTE)) {
       this.parseAttributeInDeclaration(); // Parse and ignore the attribute for now
@@ -606,6 +606,12 @@ export class Parser {
     
     // Check if we have an identifier (might be an anonymous struct/union/enum if followed by ;)
     if (!this.check(TokenType.IDENTIFIER)) {
+      // Check for anonymous enum { ... } - need to parse the values
+      if (typeSpecifier.typeName.startsWith('enum') && this.check(TokenType.LEFT_BRACE)) {
+        // This is an anonymous enum declaration - parse it properly
+        return this.parseEnumDeclaration();
+      }
+      
       if (this.check(TokenType.SEMICOLON)) {
         this.advance();
         
@@ -951,6 +957,42 @@ export class Parser {
                 this.consume(TokenType.RIGHT_BRACKET, "Expected ']' after array size");
               }
               
+              // Handle comma-separated members: struct foo *a, *b;
+              while (this.match(TokenType.COMMA)) {
+                let additionalPointerCount = 0;
+                while (this.match(TokenType.MULTIPLY)) {
+                  additionalPointerCount++;
+                }
+                
+                const additionalMemberName = this.consume(TokenType.IDENTIFIER, 'Expected member name');
+                
+                const additionalMemberType: TypeSpecifierNode = {
+                  ...nestedType,
+                  isPointer: nestedType.isPointer || additionalPointerCount > 0,
+                  pointerCount: nestedType.pointerCount + additionalPointerCount,
+                };
+                
+                members.push({
+                  type: NodeType.DECLARATION,
+                  varType: additionalMemberType,
+                  name: additionalMemberName.value,
+                  line: nestedType.line,
+                  column: nestedType.column,
+                });
+                
+                // Handle array declarators for additional members
+                if (this.match(TokenType.LEFT_BRACKET)) {
+                  if (!this.check(TokenType.RIGHT_BRACKET)) {
+                    this.parseExpression();
+                  }
+                  this.consume(TokenType.RIGHT_BRACKET, "Expected ']' after array size");
+                }
+                
+                if (this.match(TokenType.COLON)) {
+                  this.parseExpression();
+                }
+              }
+              
               this.consume(TokenType.SEMICOLON, "Expected ';' after member declaration");
               continue;
             }
@@ -1020,6 +1062,43 @@ export class Parser {
             
             if (this.match(TokenType.COLON)) {
               this.parseExpression();
+            }
+            
+            // Handle comma-separated member declarations: int a, b, c; or struct foo *a, *b;
+            while (this.match(TokenType.COMMA)) {
+              // Handle pointers for additional members (e.g., *ptr after comma)
+              let additionalPointerCount = 0;
+              while (this.match(TokenType.MULTIPLY)) {
+                additionalPointerCount++;
+              }
+              
+              const additionalMemberName = this.consume(TokenType.IDENTIFIER, 'Expected member name');
+              
+              const additionalMemberType: TypeSpecifierNode = {
+                ...memberType,
+                isPointer: memberType.isPointer || additionalPointerCount > 0,
+                pointerCount: memberType.pointerCount + additionalPointerCount,
+              };
+              
+              members.push({
+                type: NodeType.DECLARATION,
+                varType: additionalMemberType,
+                name: additionalMemberName.value,
+                line: memberType.line,
+                column: memberType.column,
+              });
+              
+              // Handle array declarators for additional members
+              if (this.match(TokenType.LEFT_BRACKET)) {
+                if (!this.check(TokenType.RIGHT_BRACKET)) {
+                  this.parseExpression();
+                }
+                this.consume(TokenType.RIGHT_BRACKET, "Expected ']' after array size");
+              }
+              
+              if (this.match(TokenType.COLON)) {
+                this.parseExpression();
+              }
             }
             
             this.consume(TokenType.SEMICOLON, "Expected ';' after member declaration");
@@ -1776,8 +1855,13 @@ export class Parser {
   }
 
   private parseEnumDeclaration(): EnumDeclarationNode {
-    const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected enum name');
-    const name = nameToken.value;
+    let name = '';
+    
+    // Check if there's a name before the brace (named enum) or if it's anonymous (enum { ... })
+    if (!this.check(TokenType.LEFT_BRACE)) {
+      const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected enum name');
+      name = nameToken.value;
+    }
     
     this.consume(TokenType.LEFT_BRACE, 'Expected \'{\' after enum name');
     const values: EnumValueNode[] = [];
@@ -1808,8 +1892,8 @@ export class Parser {
       type: NodeType.ENUM_DECLARATION,
       name,
       values,
-      line: nameToken.line,
-      column: nameToken.column,
+      line: this.previous().line,
+      column: this.previous().column,
     };
   }
 

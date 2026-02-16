@@ -101,10 +101,22 @@ export class IRGenerator {
   }
 
   private processEnumDeclaration(enumDecl: EnumDeclarationNode): void {
+    // Handle case where enum values might be in varType instead
+    let values = enumDecl.values;
+    if (!values && (enumDecl as any).varType) {
+      // This is a declaration node with varType - values were consumed by parser
+      // For now, just skip - enum values will be handled as constants
+      return;
+    }
+    
+    if (!values) {
+      return;
+    }
+    
     // For now, we'll just treat enum values as integer constants
     // In a full implementation, we'd store them in a symbol table
     let nextValue = 0;
-    for (const enumValue of enumDecl.values) {
+    for (const enumValue of values) {
       if (enumValue.value) {
         // If there's an explicit value, parse it
         const value = this.processExpression(enumValue.value);

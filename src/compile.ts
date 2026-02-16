@@ -8,6 +8,7 @@ import { IRGenerator } from './codegen/IRGenerator';
 import { generateX8664Assembly } from './codegen/AssemblyGenerator';
 import { generateELFObjectFile } from './codegen/ELFGenerator';
 import { prettyPrintIR } from './codegen/IR';
+import { Preprocessor } from './preprocessor/Preprocessor';
 
 const VERBOSE = process.env.PCC_VERBOSE === '1';
 const TOKEN_DEBUG = process.env.PCC_TOKENS === '1';
@@ -51,15 +52,21 @@ async function main() {
   
   const sourceFile = args[0];
   
-  try {
+    try {
     // Read source file
     const sourceCode = await readFile(sourceFile, 'utf-8');
     console.log(`=== Compiling ${sourceFile} ===`);
     if (VERBOSE) console.log(`\n=== Source Code ===\n${sourceCode}`);
     
+    // Phase 0: Preprocessing
+    console.log(`\n=== Phase 0: Preprocessing ===`);
+    const preprocessor = new Preprocessor();
+    const preprocessedCode = preprocessor.preprocess(sourceCode, sourceFile);
+    if (VERBOSE) console.log(`\n=== Preprocessed Code ===\n${preprocessedCode}`);
+    
     // Phase 1: Lexical Analysis
     console.log(`\n=== Phase 1: Lexical Analysis ===`);
-    const lexer = new Lexer(sourceCode);
+    const lexer = new Lexer(preprocessedCode);
     const tokens = lexer.tokenize();
     console.log(`Generated ${tokens.length} tokens`);
     if (TOKEN_DEBUG) tokens.forEach((token, i) => {
