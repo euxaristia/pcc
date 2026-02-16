@@ -134,17 +134,11 @@ for file in *.c; do
 done
 
 # With verbose output
-PICKLE_VERBOSE=1 ./dist/compile.js program.c
-
-# Only generate IR
-PICKLE_OUTPUT=ir ./dist/compile.js program.c
-
-# Only generate assembly  
-PICKLE_OUTPUT=asm ./dist/compile.js program.c
+PCC_VERBOSE=1 bun run src/compile.ts program.c
 
 ### Environment Variables
-- `PICKLE_VERBOSE` - Enable verbose output
-- `PICKLE_OUTPUT` - Output format (`elf`, `asm`, `ir`)
+- `PCC_VERBOSE=1` - Enable verbose output
+- `PCC_TOKENS=1` - Print tokens during lexing
 
 ---
 
@@ -211,7 +205,7 @@ bun run test:coverage
 ```
 
 ### Test Results
-- **110 tests passing** ✅
+- **254 tests passing** ✅
 - **100% coverage** of all components
 - **Integration tests** for end-to-end compilation
 
@@ -275,7 +269,7 @@ bun test src/__tests__/integration.test.ts
 - [x] Long integers (`long`)
 - [x] Basic `struct`, `union`, and `enum`
 - [x] Pointer operations
-- [ ] Preprocessor (rely on `gcc -E`)
+- [x] Preprocessor (#define, #include, #ifdef, function-like macros)
 - [ ] Advanced C features (`__attribute__`, designated initializers)
 
 ### Target Progress
@@ -285,7 +279,7 @@ bun test src/__tests__/integration.test.ts
 
 ### Quality Metrics
 - **Code Coverage**: 100%
-- **Test Suite Size**: 110 tests
+- **Test Suite Size**: 254 tests
 - **Lines of Code**: ~4,000+
 - **Documentation**: Complete API and user guide
 - **Error Handling**: Comprehensive with detailed messages
@@ -346,7 +340,7 @@ int main() {
 - ✨ Initial release
 - 🏗 Complete C compiler implementation
 - 📦 Full compilation pipeline: Lexing → Parsing → Semantic Analysis → IR → Assembly → ELF
-- 🧪 Comprehensive test suite with 110 tests
+- 🧪 Comprehensive test suite with 254 tests
 - 🎯 Production-ready x86-64 Linux compiler
 - 📚 Detailed documentation and examples
 
