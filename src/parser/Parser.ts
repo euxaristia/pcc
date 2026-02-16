@@ -968,8 +968,33 @@ export class Parser {
               continue;
             }
 
-            const memberName = this.consume(TokenType.IDENTIFIER, 'Expected member name');
-            const memberNameValue = memberName.value;
+            // Handle function pointer members: void (*callback)(int, void *)
+            // After parsing type (e.g., void), we might see (*name)(params)
+            let memberNameValue: string;
+            if (this.check(TokenType.LEFT_PAREN)) {
+              // This is a function pointer member - parse (*name)(params)
+              const savedPos = this.current;
+              this.advance(); // consume '('
+              if (this.check(TokenType.MULTIPLY)) {
+                // Got (*name) - consume * and identifier, then )
+                this.advance(); // consume *
+                const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected member name');
+                memberNameValue = nameToken.value;
+                this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer name");
+                // Skip until we hit ;
+                while (!this.check(TokenType.SEMICOLON) && !this.isAtEnd()) {
+                  this.advance();
+                }
+              } else {
+                // Not a function pointer, backtrack
+                this.current = savedPos;
+                const memberName = this.consume(TokenType.IDENTIFIER, 'Expected member name');
+                memberNameValue = memberName.value;
+              }
+            } else {
+              const memberName = this.consume(TokenType.IDENTIFIER, 'Expected member name');
+              memberNameValue = memberName.value;
+            }
             
             members.push({
               type: NodeType.DECLARATION,

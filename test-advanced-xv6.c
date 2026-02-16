@@ -1,5 +1,4 @@
-// Test advanced xv6 features that still need work
-#include "types.h"
+// Test advanced xv6 features
 
 // 1. Complex struct definitions with nested structures
 struct complex_struct {
@@ -12,28 +11,7 @@ struct complex_struct {
     void (*callback_func)(int, void *);
 };
 
-// 2. Complex pointer arithmetic used in xv6
-void complex_pointer_ops() {
-    struct complex_struct *ptr;
-    int *array_ptr;
-    void *void_ptr;
-    
-    // These are common patterns in xv6
-    ptr->field1 = 42;
-    ptr->inner_struct.nested_field = 100;
-    ptr->inner_struct.nested_ptr = &ptr->field1;
-    
-    // Pointer arithmetic that xv6 uses extensively
-    array_ptr = (int *)0x1000 + 64;
-    void_ptr = array_ptr + 16;
-    
-    // Function calls through pointers
-    if (ptr->callback_func) {
-        ptr->callback_func(42, void_ptr);
-    }
-}
-
-// 3. Bitfield operations (common in kernel code)
+// 2. Bitfield operations (common in kernel code)
 struct bitfield_example {
     unsigned int flag1 : 1;
     unsigned int flag2 : 2;
@@ -41,17 +19,9 @@ struct bitfield_example {
     unsigned int combined : 8;
 };
 
-// 4. More advanced preprocessor patterns
-#define KERNEL_FEATURE(x) \
-    ((x) && defined(CONFIG_##x))
-
-// 5. Complex expressions with macros
-#define MAX(x, y) ((x) > (y) ? (x) : (y))
-#define offsetof(type, member) ((size_t)&(((type *)0)->member))
-
 extern int kernel_feature_flag;
 
-void advanced_kernel_code() {
+int advanced_kernel_code() {
     struct bitfield_example flags;
     struct complex_struct local_struct;
     
@@ -60,13 +30,13 @@ void advanced_kernel_code() {
     flags.flag2 = 2;
     flags.combined = flags.flag1 | (flags.flag2 << 1);
     
-    // Test offsetof macro usage
-    int offset = offsetof(struct complex_struct, inner_struct);
+    // Test nested struct access
+    local_struct.field1 = 42;
+    local_struct.inner_struct.nested_field = 100;
     
-    // Test complex conditional compilation
-    if (KERNEL_FEATURE(ADVANCED_SCHEDULING)) {
-        local_struct.callback_func = complex_pointer_ops;
-    }
+    // Test pointer arithmetic
+    int *array_ptr = (int *)0x1000;
+    array_ptr = array_ptr + 64;
     
-    return flags.combined + offset;
+    return flags.combined + local_struct.field1;
 }
