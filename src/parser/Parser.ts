@@ -623,6 +623,7 @@ export class Parser {
 
     
     // Check for function pointer declarator: type (*name)(params) or type (*name)(params) = initializer
+    // Also handle: type (*name[size])(params) - array of function pointers
     if (this.check(TokenType.LEFT_PAREN)) {
       const savedPos = this.current;
       this.advance(); // consume '('
@@ -638,6 +639,15 @@ export class Parser {
         // Consume the identifier name
         const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected identifier in function pointer declarator');
         const name = nameToken.value;
+
+        // Handle array specifier BEFORE the closing paren: (*name[size])
+        let arraySize: ExpressionNode | undefined;
+        if (this.match(TokenType.LEFT_BRACKET)) {
+          if (!this.check(TokenType.RIGHT_BRACKET)) {
+            arraySize = this.parseExpression();
+          }
+          this.consume(TokenType.RIGHT_BRACKET, "Expected ']' after array size");
+        }
         
         this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer name");
         
@@ -651,9 +661,8 @@ export class Parser {
         }
         this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer parameters");
         
-        // Handle array declarations for function pointers (rare)
-        let arraySize: ExpressionNode | undefined;
-        if (this.match(TokenType.LEFT_BRACKET)) {
+        // Handle array declarations for function pointers (if not already handled above)
+        if (!arraySize && this.match(TokenType.LEFT_BRACKET)) {
           if (!this.check(TokenType.RIGHT_BRACKET)) {
             arraySize = this.parseExpression();
           }
@@ -1097,8 +1106,15 @@ export class Parser {
         
         // For casts like void(*)(void), there might not be an identifier next
         if (this.check(TokenType.IDENTIFIER)) {
-          // This is likely a declaration like void (*func)(void), not a cast
-          this.current = savedPos;
+          // Check if followed by [ (array) or ( (function) - if so, this is a declaration not a cast
+          const nextAfterIdent = this.peek(1).type;
+          if (nextAfterIdent === TokenType.LEFT_BRACKET || nextAfterIdent === TokenType.LEFT_PAREN) {
+            // This is likely a declaration like void (*func)(void) or void (*func_array[4]), not a cast
+            this.current = savedPos;
+          } else {
+            // It's a cast with an identifier as the type - consume the identifier and continue
+            this.advance(); // consume the identifier (type name)
+          }
         } else {
           this.consume(TokenType.RIGHT_PAREN, "Expected ')' after * in function pointer type");
           
