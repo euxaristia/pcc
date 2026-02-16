@@ -613,17 +613,9 @@ export class SemanticAnalyzer {
           return { type: member.type, isError: false };
         }
       }
-      // If we can't find the struct info, assume the member is a pointer to the same struct
-      // This is the common pattern in kernel code (linked lists, etc.)
-      return {
-        type: {
-          baseType: BaseType.STRUCT,
-          isPointer: true,
-          pointerCount: 1,
-          structName: structType.structName,
-        },
-        isError: false,
-      };
+      // If we can't find the struct info, assume int for simple members
+      // This is a fallback for cases where we can't resolve the exact type
+      return { type: BuiltinTypes.INT, isError: false };
     }
 
     // Fallback: return int
