@@ -247,7 +247,7 @@ export interface PostfixExpressionNode extends ASTNode {
 
 export interface FunctionCallNode extends ASTNode {
   type: NodeType.FUNCTION_CALL;
-  name: string;
+  callee: ExpressionNode;
   arguments: ExpressionNode[];
 }
 
@@ -1153,28 +1153,22 @@ export class Parser {
             this.advance(); // consume the identifier (type name)
           }
         } else {
-          // Check: after (*...) ) , if there's another ( it's a declaration not a cast
-          // e.g., int (*func_ptr)(void) - after ) we have (
-          const afterRightParen = this.peek(1);
-          if (afterRightParen.type === TokenType.LEFT_PAREN) {
-            // This is a function pointer declaration, not a cast - backtrack
-            this.current = savedPos;
-          } else {
-            this.consume(TokenType.RIGHT_PAREN, "Expected ')' after * in function pointer type");
-            
-            // Parse parameter list for function pointer type
-            this.consume(TokenType.LEFT_PAREN, "Expected '(' after function pointer type");
-            if (this.check(TokenType.VOID)) {
-              this.advance(); // consume 'void'
-            } else if (!this.check(TokenType.RIGHT_PAREN)) {
-              // Parse parameters for real
-              const params = this.parseParameters();
-            }
-            this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer type parameters");
-            
-            // Build function pointer type name for casts
-            typeName = `${typeName}(${pointerStars})()`;
+          // In the context of parseUnary handling casts, we should proceed with function pointer type parsing
+          // Don't backtrack even if followed by ( - it could be a cast like (void(*)(void))(x)
+          this.consume(TokenType.RIGHT_PAREN, "Expected ')' after * in function pointer type");
+          
+          // Parse parameter list for function pointer type
+          this.consume(TokenType.LEFT_PAREN, "Expected '(' after function pointer type");
+          if (this.check(TokenType.VOID)) {
+            this.advance(); // consume 'void'
+          } else if (!this.check(TokenType.RIGHT_PAREN)) {
+            // Parse parameters for real
+            const params = this.parseParameters();
           }
+          this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer type parameters");
+          
+          // Build function pointer type name for casts
+          typeName = `${typeName}(${pointerStars})()`;
         }
       } else {
         // Not a function pointer type, backtrack
@@ -2161,6 +2155,8 @@ export class Parser {
   private parseUnary(): ExpressionNode {
     // Handle type casting: (type) expression
     // Also handle compound literals: (type){initializer}
+    let expr: ExpressionNode | null = null;
+    
     if (this.check(TokenType.LEFT_PAREN)) {
       const savedPosition = this.current;
       this.advance(); // consume '('
@@ -2213,55 +2209,89 @@ export class Parser {
           
           // It's a type cast: (type)expression
           this.advance(); // consume ')'
-          const operand = this.parseMultiplicative(); // Cast has high precedence, but allow * / % after
+          expr = this.parseMultiplicative();
           
           // Check for additive operators after the cast operand
-          let result: ExpressionNode = operand;
           while (this.match(TokenType.PLUS, TokenType.MINUS)) {
             const operator = this.previous().value;
             const right = this.parseMultiplicative();
-            result = {
+            expr = {
               type: NodeType.BINARY_EXPRESSION,
               operator,
-              left: result,
+              left: expr,
               right,
-              line: result.line,
-              column: result.column,
+              line: expr.line,
+              column: expr.column,
             };
           }
           
-          return {
-            type: NodeType.CAST_EXPRESSION,
-            targetType,
-            operand: result,
-            line: targetType.line,
-            column: targetType.column,
-          };
+          // After the cast, there might be postfix operators like function call ()
+          // Continue parsing postfix operators on the result
+          while (this.check(TokenType.LEFT_PAREN)) {
+            // Function call
+            this.advance(); // consume '('
+            const args: ExpressionNode[] = [];
+            if (!this.check(TokenType.RIGHT_PAREN)) {
+              do {
+                args.push(this.parseAssignment());
+              } while (this.match(TokenType.COMMA));
+            }
+            this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function call arguments");
+            expr = {
+              type: NodeType.FUNCTION_CALL,
+              callee: expr,
+              arguments: args,
+              line: expr.line,
+              column: expr.column,
+            };
+          }
+          
+          // Now we have the cast result in expr
+          // Continue to handle any outer unary operators (like * for dereference)
         }
       } else {
         // Not a type cast, backtrack and parse as parenthesized expression
         this.current = savedPosition;
       }
     }
-
-    if (this.match(TokenType.NOT, TokenType.MINUS, TokenType.BITWISE_AND, TokenType.MULTIPLY, TokenType.INCREMENT, TokenType.DECREMENT, TokenType.TILDE)) {
-      const operator = this.previous().value;
-      const operand = this.parseUnary();
-      return {
-        type: NodeType.UNARY_EXPRESSION,
-        operator,
-        operand,
-        line: operand.line,
-        column: operand.column,
-      };
+    
+    // If we parsed a cast/compound-literal, use it as expr
+    // Otherwise, parse the unary operator chain
+    if (!expr) {
+      if (this.match(TokenType.NOT, TokenType.MINUS, TokenType.BITWISE_AND, TokenType.MULTIPLY, TokenType.INCREMENT, TokenType.DECREMENT, TokenType.TILDE)) {
+        const operator = this.previous().value;
+        const operand = this.parseUnary();
+        return {
+          type: NodeType.UNARY_EXPRESSION,
+          operator,
+          operand,
+          line: operand.line,
+          column: operand.column,
+        };
+      }
+      
+      // Handle sizeof operator
+      if (this.match(TokenType.SIZEOF)) {
+        return this.parseSizeof();
+      }
+      
+      expr = this.parsePostfix();
+    } else {
+      // We parsed a cast - now check for outer unary operators
+      // e.g., *(int*)ptr - the * is applied to the cast result
+      while (this.match(TokenType.NOT, TokenType.MINUS, TokenType.BITWISE_AND, TokenType.MULTIPLY, TokenType.INCREMENT, TokenType.DECREMENT, TokenType.TILDE)) {
+        const operator = this.previous().value;
+        expr = {
+          type: NodeType.UNARY_EXPRESSION,
+          operator,
+          operand: expr,
+          line: expr.line,
+          column: expr.column,
+        };
+      }
     }
     
-    // Handle sizeof operator
-    if (this.match(TokenType.SIZEOF)) {
-      return this.parseSizeof();
-    }
-    
-    return this.parsePostfix();
+    return expr;
   }
 
   private parseSizeof(): SizeofExpressionNode {
@@ -2340,7 +2370,7 @@ export class Parser {
         
         expr = {
           type: NodeType.FUNCTION_CALL,
-          name: (expr as IdentifierNode).name,
+          callee: expr,
           arguments: args,
           line: expr.line,
           column: expr.column,

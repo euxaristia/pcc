@@ -930,8 +930,18 @@ export class IRGenerator {
 
     const args = call.arguments.map(arg => this.processExpression(arg));
 
+    // Handle both simple function calls (with identifier name) and complex ones (with expression)
+    let calleeName: string;
+    if (call.callee.type === NodeType.IDENTIFIER) {
+      calleeName = (call.callee as IdentifierNode).name;
+    } else {
+      // For complex callee expressions like (cast)(args)(), we can't handle properly yet
+      // Use a placeholder that will fail at link time if actually called
+      calleeName = 'unknown_function';
+    }
+
     const callInstr: IRCall = {
-      callee: call.name,
+      callee: calleeName,
       args,
       type: IRType.I32, // Default for now
     };
