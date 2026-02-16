@@ -739,7 +739,15 @@ export class SemanticAnalyzer {
       }
     }
 
-    const callResult = this.typeChecker.checkFunctionCall(node.name, argTypes);
+    // Get function name from callee (which may be an identifier or expression)
+    let funcName: string;
+    if (node.callee.type === NodeType.IDENTIFIER) {
+      funcName = (node.callee as IdentifierNode).name;
+    } else {
+      funcName = 'unknown';
+    }
+    
+    const callResult = this.typeChecker.checkFunctionCall(funcName, argTypes);
     
     // Add argument errors to main error list
     this.errors.push(...argErrors);

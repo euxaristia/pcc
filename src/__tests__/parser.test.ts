@@ -162,7 +162,8 @@ int n = 123;
       const call = stmt.expression;
       
       expect(call.type).toBe(NodeType.FUNCTION_CALL);
-      expect(call.name).toBe('foo');
+      expect(call.callee).toBeDefined();
+      expect(call.callee.name).toBe('foo');
       expect(call.arguments).toHaveLength(3);
     });
   });
