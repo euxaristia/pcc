@@ -158,7 +158,7 @@ export class Preprocessor {
     // Try to find the file
     const searchPaths = isSystemInclude 
       ? [...this.includePaths, '/home/euxaristia/Projects/pcc/include', '.']
-      : ['.', ...this.includePaths];
+      : ['.', '/home/euxaristia/Projects/pcc/include', ...this.includePaths];
 
     for (const path of searchPaths) {
       const fullPath = path === '.' 
