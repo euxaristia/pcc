@@ -50,7 +50,6 @@ export class IRGenerator {
       } else if (decl.type === NodeType.ENUM_DECLARATION) {
         this.processEnumDeclaration(decl as EnumDeclarationNode);
       }
-      // Unions are handled like structs for now
     }
 
     // Second pass: process function declarations
@@ -89,6 +88,30 @@ export class IRGenerator {
         initializer = initializers;
         isArray = true;
         arraySize = initializers.length;
+      } else if (decl.initializer.type === NodeType.CAST_EXPRESSION) {
+        const castExpr = decl.initializer as CastExpressionNode;
+        const operand = castExpr.operand as ExpressionNode;
+        if (operand.type === NodeType.NUMBER_LITERAL) {
+          initializer = this.processNumberLiteral(operand as NumberLiteralNode);
+        } else if (operand.type === NodeType.UNARY_EXPRESSION) {
+          const unary = operand as UnaryExpressionNode;
+          if (unary.operator === '&' && unary.operand.type === NodeType.IDENTIFIER) {
+            initializer = createConstant(0, IRType.PTR);
+          } else if (unary.operator === '-' && unary.operand.type === NodeType.NUMBER_LITERAL) {
+            const num = unary.operand as NumberLiteralNode;
+            initializer = createConstant(-num.value, IRType.I32);
+          } else if (unary.operand.type === NodeType.NUMBER_LITERAL) {
+            initializer = this.processNumberLiteral(unary.operand as NumberLiteralNode);
+          }
+        }
+      } else if (decl.initializer.type === NodeType.UNARY_EXPRESSION) {
+        const unary = decl.initializer as UnaryExpressionNode;
+        if (unary.operator === '&' && unary.operand.type === NodeType.IDENTIFIER) {
+          initializer = createConstant(0, IRType.PTR);
+        } else if (unary.operator === '-' && unary.operand.type === NodeType.NUMBER_LITERAL) {
+          const num = unary.operand as NumberLiteralNode;
+          initializer = createConstant(-num.value, IRType.I32);
+        }
       }
     }
 
@@ -901,7 +924,16 @@ export class IRGenerator {
         
         if (unary.operand.type === NodeType.IDENTIFIER) {
           const ident = unary.operand as IdentifierNode;
-          const addr = this.context.valueMap.get(ident.name);
+          let addr = this.context.valueMap.get(ident.name);
+          
+          // Check for global variable
+          if (!addr) {
+            const global = this.module.globals.find(g => g.name === ident.name);
+            if (global) {
+              addr = createValue(global.name, IRType.PTR);
+            }
+          }
+          
           if (addr) {
             const currentVal = createInstruction(this.genId(), IROpCode.LOAD, this.getPointedToType(addr.type), [addr]);
             this.context.currentBlock.instructions.push(currentVal);
@@ -1006,16 +1038,17 @@ export class IRGenerator {
     // Ensure condition is an IRValue (not a constant)
     if ('value' in condition) {
       const constVal = condition as IRConstant;
-      const constValue = createInstruction(
+      // Create a MOV instruction to convert constant to value
+      const movInstr = createInstruction(
         this.genId(),
-        IROpCode.ADD, // Just copy the constant
+        IROpCode.MOV,
         constVal.type,
         [constVal]
       );
       if (this.context.currentBlock) {
-        this.context.currentBlock.instructions.push(constValue);
+        this.context.currentBlock.instructions.push(movInstr);
       }
-      condition = constValue as IRValue;
+      condition = movInstr as IRValue;
     }
     
     // Create new blocks for the branches
@@ -1122,6 +1155,10 @@ export class IRGenerator {
       const enumValue = this.enumValues.get(ident.name);
       if (enumValue !== undefined) {
         return createConstant(enumValue, IRType.I32) as unknown as IRValue;
+      }
+      // For all-caps identifiers (common for enum values), treat as constant 0
+      if (ident.name === ident.name.toUpperCase() && /^[A-Z][A-Z0-9_]*$/.test(ident.name)) {
+        return createConstant(0, IRType.I32) as unknown as IRValue;
       }
       throw new Error(`Variable ${ident.name} not declared`);
     }

@@ -2426,8 +2426,8 @@ export class Parser {
           this.advance(); // consume ')'
           expr = this.parseMultiplicative();
           
-          // Check for additive operators after the cast operand
-          while (this.match(TokenType.PLUS, TokenType.MINUS)) {
+          // Check for additive and bitwise operators after the cast operand
+          while (this.match(TokenType.PLUS, TokenType.MINUS, TokenType.BITWISE_AND, TokenType.BITWISE_OR, TokenType.BITWISE_XOR)) {
             const operator = this.previous().value;
             const right = this.parseMultiplicative();
             expr = {

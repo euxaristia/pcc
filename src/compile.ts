@@ -131,6 +131,9 @@ async function main() {
     
     const elf = generateELFObjectFile(assemblyProgram, arch);
     
+    // Debug: show bytes at offset 32-48
+    console.log('DEBUG: elf[32-47] =', Array.from(elf.slice(32, 48)).map(b => b.toString(16).padStart(2,'0')).join(' '));
+    
     // Write ELF file
     const elfFileName = sourceFile.replace(/\.c$/, '.o');
     await writeFile(elfFileName, elf);

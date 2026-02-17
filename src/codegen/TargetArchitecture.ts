@@ -398,6 +398,10 @@ export class InstructionSelector {
       case IROpCode.NOT:
         assembly.push(...this.selectNotInstruction(instruction, getValue));
         break;
+
+      case IROpCode.MOV:
+        assembly.push(...this.selectMovInstruction(instruction, getValue));
+        break;
         
       case IROpCode.LOAD:
         assembly.push(...this.selectLoadInstruction(instruction, getValue));
@@ -695,6 +699,26 @@ export class InstructionSelector {
     // Logical not: result = (operand == 0)
     assembly.push(`cmp ${resultReg.name}, 0`);
     assembly.push(`sete ${resultReg.name}`);
+    
+    return assembly;
+  }
+
+  private selectMovInstruction(
+    instruction: IRInstruction,
+    getValue: (id: string) => string
+  ): string[] {
+    const [operand] = instruction.operands;
+    const operandStr = this.getOperandString(operand, getValue);
+    
+    const resultReg = this.registerAllocator.allocateRegister(instruction.id, instruction.type);
+    if (!resultReg) {
+      throw new Error('No available registers for mov operation');
+    }
+    
+    const assembly: string[] = [];
+    
+    // Move operand to result register
+    assembly.push(`mov ${operandStr}, ${resultReg.name}`);
     
     return assembly;
   }

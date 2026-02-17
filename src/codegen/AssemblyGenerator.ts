@@ -262,6 +262,9 @@ export class X8664AssemblyGenerator {
         let floatArgCount = 0;
         for (let i = 0; i < call.args.length; i++) {
           const arg = call.args[i];
+          if (!arg || !arg.type) {
+            continue;
+          }
           if (isFloatingPointType(arg.type)) {
             if (floatArgCount < 8) {
               const argReg = X8664CallingConvention.floatArgumentRegisters[floatArgCount++];
