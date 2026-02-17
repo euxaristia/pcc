@@ -1,1 +1,5 @@
 *.ts linguist-language=TypeScript
+
+# Exclude headers from language statistics
+include/** linguist-documentation=false
+*.h linguist-documentation=false
