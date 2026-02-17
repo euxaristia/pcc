@@ -854,8 +854,7 @@ export class IRGenerator {
       case '++_post':
       case '--_post':
         const isPost = unary.operator.endsWith('_post');
-        const incrementValue = (unary.operator === '++' || unary.operator === '++_post') ? 
-          createConstant(1, IRType.I32) : createConstant(-1, IRType.I32);
+        const isIncrement = unary.operator === '++' || unary.operator === '++_post';
         
         if (unary.operand.type === NodeType.IDENTIFIER) {
           const ident = unary.operand as IdentifierNode;
@@ -864,7 +863,7 @@ export class IRGenerator {
             const currentVal = createInstruction(this.genId(), IROpCode.LOAD, this.getPointedToType(addr.type), [addr]);
             this.context.currentBlock.instructions.push(currentVal);
             
-            const newVal = createInstruction(this.genId(), IROpCode.ADD, currentVal.type, [currentVal as IRValue, incrementValue]);
+            const newVal = createInstruction(this.genId(), IROpCode.ADD, currentVal.type, [currentVal as IRValue, isIncrement ? createConstant(1, currentVal.type) : createConstant(-1, currentVal.type)]);
             this.context.currentBlock.instructions.push(newVal);
             
             const store = createInstruction(this.genId(), IROpCode.STORE, IRType.VOID, [newVal as IRValue, addr]);
@@ -873,7 +872,60 @@ export class IRGenerator {
             return (isPost ? currentVal : newVal) as IRValue;
           }
         }
-        throw new Error('Increment/decrement only supported on identifiers for now');
+        
+        if (unary.operand.type === NodeType.POSTFIX_EXPRESSION && (unary.operand as PostfixExpressionNode).operator === '->') {
+          const postfix = unary.operand as PostfixExpressionNode;
+          const baseAddr = this.getAddressOfExpression(postfix.operand);
+          if (baseAddr) {
+            const currentVal = createInstruction(this.genId(), IROpCode.LOAD, IRType.I32, [baseAddr]);
+            this.context.currentBlock.instructions.push(currentVal);
+            
+            const newVal = createInstruction(this.genId(), IROpCode.ADD, currentVal.type, [currentVal as IRValue, isIncrement ? createConstant(1, currentVal.type) : createConstant(-1, currentVal.type)]);
+            this.context.currentBlock.instructions.push(newVal);
+            
+            const store = createInstruction(this.genId(), IROpCode.STORE, IRType.VOID, [newVal as IRValue, baseAddr]);
+            this.context.currentBlock.instructions.push(store);
+            
+            return (isPost ? currentVal : newVal) as IRValue;
+          }
+        }
+        
+        if (unary.operand.type === NodeType.MEMBER_ACCESS) {
+          const memberAccess = unary.operand as MemberAccessNode;
+          const baseAddr = this.getAddressOfExpression(memberAccess);
+          if (baseAddr) {
+            const currentVal = createInstruction(this.genId(), IROpCode.LOAD, IRType.I32, [baseAddr]);
+            this.context.currentBlock.instructions.push(currentVal);
+            
+            const newVal = createInstruction(this.genId(), IROpCode.ADD, currentVal.type, [currentVal as IRValue, isIncrement ? createConstant(1, currentVal.type) : createConstant(-1, currentVal.type)]);
+            this.context.currentBlock.instructions.push(newVal);
+            
+            const store = createInstruction(this.genId(), IROpCode.STORE, IRType.VOID, [newVal as IRValue, baseAddr]);
+            this.context.currentBlock.instructions.push(store);
+            
+            return (isPost ? currentVal : newVal) as IRValue;
+          }
+        }
+        
+        if (unary.operand.type === NodeType.ARRAY_ACCESS) {
+          const arrayAccess = unary.operand as ArrayAccessNode;
+          const baseAddr = this.processExpression(arrayAccess);
+          if (baseAddr) {
+            const currentVal = createInstruction(this.genId(), IROpCode.LOAD, IRType.I32, [baseAddr]);
+            this.context.currentBlock.instructions.push(currentVal);
+            
+            const newVal = createInstruction(this.genId(), IROpCode.ADD, currentVal.type, [currentVal as IRValue, isIncrement ? createConstant(1, currentVal.type) : createConstant(-1, currentVal.type)]);
+            this.context.currentBlock.instructions.push(newVal);
+            
+            const store = createInstruction(this.genId(), IROpCode.STORE, IRType.VOID, [newVal as IRValue, baseAddr]);
+            this.context.currentBlock.instructions.push(store);
+            
+            return (isPost ? currentVal : newVal) as IRValue;
+          }
+        }
+        
+        console.error('DEBUG: Increment operand type:', unary.operand.type, 'operator:', unary.operator);
+        throw new Error('Increment/decrement only supported on identifiers, member access, and pointer dereference for now');
 
       default:
         throw new Error(`Unsupported unary operator: ${unary.operator}`);
@@ -1338,5 +1390,35 @@ export class IRGenerator {
     }
     
     throw new Error('Unsupported array access type');
+  }
+  
+  private getAddressOfExpression(expr: ExpressionNode): IRValue | null {
+    if (expr.type === NodeType.IDENTIFIER) {
+      const ident = expr as IdentifierNode;
+      const addr = this.context.valueMap.get(ident.name);
+      return addr || null;
+    }
+    
+    if (expr.type === NodeType.MEMBER_ACCESS) {
+      const memberAccess = expr as MemberAccessNode;
+      const baseAddr = this.getAddressOfExpression(memberAccess.object);
+      if (baseAddr) {
+        return baseAddr;
+      }
+    }
+    
+    if (expr.type === NodeType.UNARY_EXPRESSION && (expr as UnaryExpressionNode).operator === '*') {
+      const unary = expr as UnaryExpressionNode;
+      const baseValue = this.processExpression(unary.operand);
+      return baseValue as IRValue;
+    }
+    
+    if (expr.type === NodeType.POSTFIX_EXPRESSION && (expr as PostfixExpressionNode).operator === '->') {
+      const postfix = expr as PostfixExpressionNode;
+      const baseValue = this.processExpression(postfix.operand);
+      return baseValue as IRValue;
+    }
+    
+    return null;
   }
 }
