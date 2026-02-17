@@ -42,7 +42,14 @@ export class Preprocessor {
     this.fileName = fileName;
     
     // Handle backslash line continuations first
-    const normalized = source.replace(/\\\n/g, '');
+    let normalized = source.replace(/\\\n/g, '');
+    
+    // Remove C-style comments /* ... */
+    normalized = normalized.replace(/\/\*[\s\S]*?\*\//g, '');
+    
+    // Remove C++ style comments //
+    normalized = normalized.replace(/\/\/.*$/gm, '');
+    
     this.lines = normalized.split('\n');
     this.output = [];
     this.position = 0;
@@ -105,7 +112,10 @@ export class Preprocessor {
 
   private handleDefine(line: string): void {
     // Parse #define NAME value or #define NAME(args) value
-    const rest = line.slice(8).trim(); // Remove '#define '
+    let rest = line.slice(8).trim(); // Remove '#define '
+    
+    // Remove comments from the define
+    rest = rest.replace(/\/\/.*$/, '').replace(/\/\*[\s\S]*?\*\//, '');
     
     // Check for function-like macro
     const funcMatch = rest.match(/^(\w+)\s*\(([^)]*)\)\s*(.*)$/);
@@ -192,7 +202,14 @@ export class Preprocessor {
   
   private preprocessInclude(source: string, fileName: string): string {
     // Handle backslash line continuations
-    const normalized = source.replace(/\\\n/g, '');
+    let normalized = source.replace(/\\\n/g, '');
+    
+    // Remove C-style comments /* ... */
+    normalized = normalized.replace(/\/\*[\s\S]*?\*\//g, '');
+    
+    // Remove C++ style comments //
+    normalized = normalized.replace(/\/\/.*$/gm, '');
+    
     const lines = normalized.split('\n');
     const output: string[] = [];
     
