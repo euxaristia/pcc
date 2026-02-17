@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc",
+    "build:native": "bun build src/compile.ts --compile --outfile pcc",
     "test": "jest",
     "dev": "tsc --watch"
   },
