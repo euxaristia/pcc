@@ -87,10 +87,9 @@ export class SymbolTable {
   declare(symbol: Symbol): void {
     const existingSymbols = this.symbols.get(symbol.name) || [];
     
-    // Check if symbol already exists in current scope
     const inCurrentScope = existingSymbols.some(s => s.scopeLevel === this.scopeLevel);
     if (inCurrentScope) {
-      throw new Error(`Symbol '${symbol.name}' already declared in current scope at line ${symbol.line}, column ${symbol.column}`);
+      return; // Allow re-declaration
     }
 
     existingSymbols.push({ ...symbol, scopeLevel: this.scopeLevel });

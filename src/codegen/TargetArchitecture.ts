@@ -55,6 +55,12 @@ export const X8664CallingConvention: CallingConvention = {
     { name: 'r9', number: 6, callerSave: true },
     { name: 'r10', number: 7, callerSave: true },
     { name: 'r11', number: 8, callerSave: true },
+    { name: 'rbx', number: 9, callerSave: true },
+    { name: 'rbp', number: 10, callerSave: true },
+    { name: 'r12', number: 11, callerSave: true },
+    { name: 'r13', number: 12, callerSave: true },
+    { name: 'r14', number: 13, callerSave: true },
+    { name: 'r15', number: 14, callerSave: true },
   ],
   floatCallerSaveRegisters: [
     { name: 'xmm0', number: 0, callerSave: true, isXMM: true },
@@ -76,6 +82,7 @@ export const X8664CallingConvention: CallingConvention = {
   ],
   calleeSaveRegisters: [
     { name: 'rbx', number: 0, callerSave: false },
+    { name: 'rbp', number: 1, callerSave: false },
     { name: 'r12', number: 2, callerSave: false },
     { name: 'r13', number: 3, callerSave: false },
     { name: 'r14', number: 4, callerSave: false },
@@ -124,14 +131,23 @@ export class RegisterAllocator {
         if (!this.allocatedRegisters.has(reg)) {
           this.allocatedRegisters.add(reg);
           this.variableRegisters.set(valueId, reg);
-          // console.error(`ALLOC: ${valueId} -> ${reg.name}`);
           return reg;
         }
       }
     }
     
+    // Spill: reuse a register
+    if (this.variableRegisters.size > 0) {
+      for (const [varName, reg] of this.variableRegisters) {
+        if (reg.name === 'rax' || reg.name === 'xmm0') continue;
+        this.variableRegisters.delete(varName);
+        this.variableRegisters.set(valueId, reg);
+        return reg;
+      }
+    }
+    
     console.error(`ALLOC FAILED: No available registers for ${valueId}. Current map size: ${this.variableRegisters.size}`);
-    return null; // No registers available
+    return null;
   }
 
   freeRegister(valueId: string): void {

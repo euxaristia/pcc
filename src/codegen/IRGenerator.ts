@@ -720,8 +720,9 @@ export class IRGenerator {
         return createConstant(0, IRType.I32);
 
       case NodeType.COMPOUND_LITERAL:
-        // Compound literals evaluate to the address of the initializer
-        // For now, return a dummy constant
+        return createConstant(0, IRType.I32);
+
+      case NodeType.EMPTY_EXPRESSION:
         return createConstant(0, IRType.I32);
 
       default:

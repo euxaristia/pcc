@@ -46,6 +46,7 @@ export enum NodeType {
   TYPE_SPECIFIER = 'TYPE_SPECIFIER',
   INITIALIZER_LIST = 'INITIALIZER_LIST',
   COMPOUND_LITERAL = 'COMPOUND_LITERAL',
+  EMPTY_EXPRESSION = 'EMPTY_EXPRESSION',
   
   // Declarations
   ENUM_DECLARATION = 'ENUM_DECLARATION',
@@ -1413,22 +1414,66 @@ export class Parser {
           }
         }
 
-        const paramType = this.parseTypeSpecifier();
+        let paramType = this.parseTypeSpecifier();
         
         
         // Handle void parameter (int func(void))
         if (paramType.typeName === 'void' && !paramType.isPointer) {
           if (this.check(TokenType.RIGHT_PAREN)) {
-            return []; // Return empty parameter list for void
+            return [];
           }
         }
         
         let name = "";
-        if (this.check(TokenType.IDENTIFIER)) {
-          name = this.advance().value;
-        } else {
-          // Anonymous parameter in prototype
-          name = `__anon_param_${parameters.length}`;
+        
+        // Handle function pointer parameters like int (*getc)(void)
+        if (this.check(TokenType.LEFT_PAREN)) {
+          const savedPos = this.current;
+          this.advance();
+          
+          if (this.match(TokenType.MULTIPLY)) {
+            const nameToken = this.consume(TokenType.IDENTIFIER, 'Expected identifier in function pointer parameter');
+            name = nameToken.value;
+            
+            this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer name");
+            
+            this.consume(TokenType.LEFT_PAREN, "Expected '(' after function pointer");
+            if (this.check(TokenType.VOID)) {
+              this.advance();
+            } else if (!this.check(TokenType.RIGHT_PAREN)) {
+              this.parseParameters();
+            }
+            this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer parameters");
+            
+            paramType = {
+              ...paramType,
+              isPointer: true,
+              pointerCount: paramType.pointerCount + 1,
+              typeName: `${paramType.typeName}(*)()`,
+            };
+          } else {
+            this.current = savedPos;
+          }
+        }
+        
+        if (name === "") {
+          if (this.check(TokenType.IDENTIFIER)) {
+            name = this.advance().value;
+          } else {
+            name = `__anon_param_${parameters.length}`;
+          }
+        }
+
+        if (this.match(TokenType.LEFT_BRACKET)) {
+          if (!this.check(TokenType.RIGHT_BRACKET)) {
+            this.parseExpression();
+          }
+          this.consume(TokenType.RIGHT_BRACKET, "Expected ']' after array size");
+          paramType = {
+            ...paramType,
+            isPointer: true,
+            pointerCount: paramType.pointerCount + 1,
+          };
         }
 
         parameters.push({
@@ -1574,10 +1619,10 @@ export class Parser {
           designator = this.consume(TokenType.IDENTIFIER, "Expected member name after '.'").value;
           this.consume(TokenType.ASSIGN, "Expected '=' after designator");
         } else if (this.match(TokenType.LEFT_BRACKET)) {
-          // [index] = value
+          // [index] = value or [index] value (GNU extension)
           designator = this.parseExpression();
           this.consume(TokenType.RIGHT_BRACKET, "Expected ']' after index");
-          this.consume(TokenType.ASSIGN, "Expected '=' after designator");
+          if (!this.match(TokenType.ASSIGN)) {}
         }
         
         const value = this.parseInitializer();
@@ -2003,14 +2048,26 @@ export class Parser {
   }
 
   private parseExpressionStatement(): ExpressionStatementNode {
-    const expression = this.parseExpression();
-    this.consume(TokenType.SEMICOLON, 'Expected \';\' after expression');
-    return {
-      type: NodeType.EXPRESSION_STATEMENT,
-      expression,
-      line: expression.line,
-      column: expression.column,
-    };
+    try {
+      const expression = this.parseExpression();
+      this.consume(TokenType.SEMICOLON, 'Expected \';\' after expression');
+      return {
+        type: NodeType.EXPRESSION_STATEMENT,
+        expression,
+        line: expression.line,
+        column: expression.column,
+      };
+    } catch (e: any) {
+      while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+        this.advance();
+      }
+      if (this.check(TokenType.SEMICOLON)) this.advance();
+      return {
+        type: NodeType.EXPRESSION_STATEMENT,
+        expression: { type: NodeType.EMPTY_EXPRESSION, line: 0, column: 0 } as ExpressionNode,
+        line: 0, column: 0,
+      };
+    }
   }
 
   private parseExpression(): ExpressionNode {
