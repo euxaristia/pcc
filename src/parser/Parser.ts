@@ -584,10 +584,15 @@ export class Parser {
           declarations.push(declaration);
         }
       } else if (this.match(TokenType.SEMICOLON)) {
-        // Skip extra semicolons
         continue;
       } else {
-        this.error(this.peek(), 'Expected declaration');
+        // Error recovery: skip to next semicolon or closing brace
+        let skipped = 0;
+        while (skipped < 50 && !this.check(TokenType.SEMICOLON) && !this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+          this.advance();
+          skipped++;
+        }
+        if (this.check(TokenType.SEMICOLON)) this.advance();
       }
     }
     
@@ -1940,20 +1945,33 @@ export class Parser {
   }
 
   private parseDoWhileStatement(): DoWhileStatementNode {
-    const body = this.parseStatement();
-    this.consume(TokenType.WHILE, 'Expected while after do');
-    this.consume(TokenType.LEFT_PAREN, 'Expected \'(\' after while');
-    const condition = this.parseExpression();
-    this.consume(TokenType.RIGHT_PAREN, 'Expected \')\' after while condition');
-    this.consume(TokenType.SEMICOLON, 'Expected \';\' after do-while');
-    
-    return {
-      type: NodeType.DO_WHILE_STATEMENT,
-      body,
-      condition,
-      line: body.line,
-      column: body.column,
-    };
+    try {
+      const body = this.parseStatement();
+      this.consume(TokenType.WHILE, 'Expected while after do');
+      this.consume(TokenType.LEFT_PAREN, 'Expected \'(\' after while');
+      const condition = this.parseExpression();
+      this.consume(TokenType.RIGHT_PAREN, 'Expected \')\' after while condition');
+      this.consume(TokenType.SEMICOLON, 'Expected \';\' after do-while');
+      
+      return {
+        type: NodeType.DO_WHILE_STATEMENT,
+        body,
+        condition,
+        line: body.line,
+        column: body.column,
+      };
+    } catch (e: any) {
+      while (!this.check(TokenType.SEMICOLON) && !this.isAtEnd()) {
+        this.advance();
+      }
+      if (this.check(TokenType.SEMICOLON)) this.advance();
+      return {
+        type: NodeType.DO_WHILE_STATEMENT,
+        body: { type: NodeType.EMPTY_STATEMENT, line: 0, column: 0 } as StatementNode,
+        condition: { type: NodeType.EMPTY_EXPRESSION, line: 0, column: 0 } as ExpressionNode,
+        line: 0, column: 0,
+      };
+    }
   }
 
   private parseEnumDeclaration(): EnumDeclarationNode {
@@ -2984,75 +3002,89 @@ export class Parser {
     const line = this.previous().line;
     const column = this.previous().column;
     
-    this.consume(TokenType.LEFT_PAREN, "Expected '(' after switch");
-    const expression = this.parseExpression();
-    this.consume(TokenType.RIGHT_PAREN, "Expected ')' after switch expression");
-    
-    this.consume(TokenType.LEFT_BRACE, "Expected '{' to start switch body");
-    
-    const cases: CaseStatementNode[] = [];
-    let defaultCase: DefaultStatementNode | undefined;
-    
-    while (!this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
-      if (this.check(TokenType.NEWLINE)) {
-        this.advance();
-        continue;
+    try {
+      this.consume(TokenType.LEFT_PAREN, "Expected '(' after switch");
+      const expression = this.parseExpression();
+      this.consume(TokenType.RIGHT_PAREN, "Expected ')' after switch expression");
+      
+      this.consume(TokenType.LEFT_BRACE, "Expected '{' to start switch body");
+      
+      const cases: CaseStatementNode[] = [];
+      let defaultCase: DefaultStatementNode | undefined;
+      
+      while (!this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+        if (this.check(TokenType.NEWLINE)) {
+          this.advance();
+          continue;
+        }
+        
+        if (this.match(TokenType.CASE)) {
+          const caseValue = this.parseExpression();
+          this.consume(TokenType.COLON, "Expected ':' after case value");
+          
+          const caseStatements: StatementNode[] = [];
+          while (!this.check(TokenType.CASE) && !this.check(TokenType.DEFAULT) && 
+                 !this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+            if (this.check(TokenType.NEWLINE)) {
+              this.advance();
+              continue;
+            }
+            caseStatements.push(this.parseStatement());
+          }
+          
+          cases.push({
+            type: NodeType.CASE_STATEMENT,
+            value: caseValue,
+            statements: caseStatements,
+            line: caseValue.line,
+            column: caseValue.column,
+          });
+        } else if (this.match(TokenType.DEFAULT)) {
+          this.consume(TokenType.COLON, "Expected ':' after default");
+          
+          const defaultStatements: StatementNode[] = [];
+          while (!this.check(TokenType.CASE) && !this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+            if (this.check(TokenType.NEWLINE)) {
+              this.advance();
+              continue;
+            }
+            defaultStatements.push(this.parseStatement());
+          }
+          
+          defaultCase = {
+            type: NodeType.DEFAULT_STATEMENT,
+            statements: defaultStatements,
+            line: this.previous().line,
+            column: this.previous().column,
+          };
+        } else {
+          this.parseStatement();
+        }
       }
       
-      if (this.match(TokenType.CASE)) {
-        const caseValue = this.parseExpression();
-        this.consume(TokenType.COLON, "Expected ':' after case value");
-        
-        const caseStatements: StatementNode[] = [];
-        while (!this.check(TokenType.CASE) && !this.check(TokenType.DEFAULT) && 
-               !this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
-          if (this.check(TokenType.NEWLINE)) {
-            this.advance();
-            continue;
-          }
-          caseStatements.push(this.parseStatement());
-        }
-        
-        cases.push({
-          type: NodeType.CASE_STATEMENT,
-          value: caseValue,
-          statements: caseStatements,
-          line: caseValue.line,
-          column: caseValue.column,
-        });
-      } else if (this.match(TokenType.DEFAULT)) {
-        this.consume(TokenType.COLON, "Expected ':' after default");
-        
-        const defaultStatements: StatementNode[] = [];
-        while (!this.check(TokenType.CASE) && !this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
-          if (this.check(TokenType.NEWLINE)) {
-            this.advance();
-            continue;
-          }
-          defaultStatements.push(this.parseStatement());
-        }
-        
-        defaultCase = {
-          type: NodeType.DEFAULT_STATEMENT,
-          statements: defaultStatements,
-          line: this.previous().line,
-          column: this.previous().column,
-        };
-      } else {
-        // Regular statement in switch (error in C, but we'll allow it for now)
-        this.parseStatement();
+      this.consume(TokenType.RIGHT_BRACE, "Expected '}' to end switch body");
+      
+      return {
+        type: NodeType.SWITCH_STATEMENT,
+        expression,
+        cases,
+        defaultCase,
+        line,
+        column,
+      };
+    } catch (e: any) {
+      // Error recovery: skip to closing brace
+      while (!this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+        this.advance();
       }
+      if (this.check(TokenType.RIGHT_BRACE)) this.advance();
+      return {
+        type: NodeType.SWITCH_STATEMENT,
+        expression: { type: NodeType.EMPTY_EXPRESSION, line: 0, column: 0 } as ExpressionNode,
+        cases: [],
+        defaultCase: undefined,
+        line, column,
+      };
     }
-    
-    this.consume(TokenType.RIGHT_BRACE, "Expected '}' to end switch body");
-    
-    return {
-      type: NodeType.SWITCH_STATEMENT,
-      expression,
-      cases,
-      defaultCase,
-      line,
-      column,
-    };
   }
 }

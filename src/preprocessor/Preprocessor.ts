@@ -117,8 +117,8 @@ export class Preprocessor {
     // Remove comments from the define
     rest = rest.replace(/\/\/.*$/, '').replace(/\/\*[\s\S]*?\*\//, '');
     
-    // Check for function-like macro
-    const funcMatch = rest.match(/^(\w+)\s*\(([^)]*)\)\s*(.*)$/);
+    // Check for function-like macro - parenthesis must immediately follow name (no whitespace)
+    const funcMatch = rest.match(/^(\w+)\(([^)]*)\)\s*(.*)$/);
     if (funcMatch) {
       const name = funcMatch[1];
       const args = funcMatch[2].split(',').map(a => a.trim()).filter(a => a);

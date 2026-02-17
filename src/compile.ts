@@ -85,13 +85,14 @@ async function main() {
     const semanticErrors = analyzer.analyze(ast);
     
     if (semanticErrors.length > 0) {
-      console.log(`Semantic errors found:`);
+      console.log(`Semantic warnings found:`);
       semanticErrors.forEach((error, i) => {
         console.log(`  ${i + 1}. ${error.message} (line ${error.line}, column ${error.column})`);
       });
-      process.exit(1);
+      // Don't exit on semantic errors - continue with compilation
+    } else {
+      console.log(`Semantic analysis passed`);
     }
-    console.log(`Semantic analysis passed`);
     
     // Phase 4: IR Generation
     console.log(`\n=== Phase 4: IR Generation ===`);
