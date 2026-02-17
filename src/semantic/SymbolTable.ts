@@ -48,6 +48,7 @@ export interface Symbol {
   column?: number;
   returnType?: DataType; // For functions
   parameters?: Array<{ name: string; type: DataType }>; // For functions
+  storageClass?: string; // For variables (extern, static, etc.)
 }
 
 export interface StructMember {
@@ -89,6 +90,13 @@ export class SymbolTable {
     
     const inCurrentScope = existingSymbols.some(s => s.scopeLevel === this.scopeLevel);
     if (inCurrentScope) {
+      const existing = existingSymbols.find(s => s.scopeLevel === this.scopeLevel);
+      if (existing && existing.storageClass === 'extern' && symbol.storageClass !== 'extern') {
+        const idx = existingSymbols.indexOf(existing);
+        existingSymbols[idx] = { ...symbol, scopeLevel: this.scopeLevel };
+        this.symbols.set(symbol.name, existingSymbols);
+        return;
+      }
       throw new Error(`Symbol '${symbol.name}' already declared in current scope at line ${symbol.line}, column ${symbol.column}`);
     }
 

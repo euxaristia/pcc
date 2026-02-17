@@ -271,6 +271,7 @@ export class SemanticAnalyzer {
       scopeLevel: this.symbolTable.getCurrentScopeLevel(),
       line: node.line,
       column: node.column,
+      storageClass: node.storageClass as string | undefined,
     };
 
     try {

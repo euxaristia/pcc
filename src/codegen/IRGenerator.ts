@@ -355,7 +355,11 @@ export class IRGenerator {
       if (current.type === NodeType.UNARY_EXPRESSION && current.operator === '&') {
         current = current.operand;
       }
-      if (current.type === NodeType.IDENTIFIER) {
+      // Handle array access as base: ptr[0].member
+      if (current.type === NodeType.ARRAY_ACCESS) {
+        const arrayAccess = current as ArrayAccessNode;
+        targetAddr = this.processExpression(arrayAccess) as IRValue;
+      } else if (current.type === NodeType.IDENTIFIER) {
         const baseName = current.name;
         const addr = this.context.valueMap.get(baseName);
         if (!addr) {
@@ -369,6 +373,8 @@ export class IRGenerator {
         } else {
           targetAddr = addr;
         }
+      } else if (current.type === NodeType.POSTFIX_EXPRESSION || current.type === NodeType.FUNCTION_CALL) {
+        targetAddr = this.processExpression(current) as IRValue;
       } else {
         throw new Error(`Unsupported member access target: ${current.type}`);
       }
@@ -380,9 +386,21 @@ export class IRGenerator {
         const arrayName = arrayAccess.array.name;
         const addr = this.context.valueMap.get(arrayName);
         if (!addr) {
-          throw new Error(`Variable ${arrayName} not declared`);
+          const global = this.module.globals.find(g => g.name === arrayName);
+          if (global) {
+            targetAddr = createValue(global.name, IRType.PTR);
+          } else {
+            throw new Error(`Variable ${arrayName} not declared`);
+          }
+        } else {
+          targetAddr = addr;
         }
-        targetAddr = addr;
+      } else if (arrayAccess.array.type === NodeType.UNARY_EXPRESSION) {
+        // Handle dereference: *(ptr + offset) = value
+        targetAddr = this.processExpression(arrayAccess.array) as IRValue;
+      } else if (arrayAccess.array.type === NodeType.MEMBER_ACCESS) {
+        // Handle member access: struct.array[i] = value
+        targetAddr = this.processExpression(arrayAccess.array) as IRValue;
       } else {
         throw new Error('Unsupported array access target');
       }
@@ -821,6 +839,14 @@ export class IRGenerator {
         const postfix = unary.operand as PostfixExpressionNode;
         const baseValue = this.processExpression(postfix.operand);
         return baseValue as IRValue;
+      }
+      if (unary.operand.type === NodeType.ARRAY_ACCESS) {
+        const arrayAccess = unary.operand as ArrayAccessNode;
+        return this.processExpression(arrayAccess) as IRValue;
+      }
+      if (unary.operand.type === NodeType.MEMBER_ACCESS) {
+        const memberAccess = unary.operand as MemberAccessNode;
+        return this.getAddressOfExpression(memberAccess) as IRValue;
       }
       if (unary.operand.type !== NodeType.IDENTIFIER) {
         console.error('DEBUG: address-of operand type:', unary.operand.type);
@@ -1400,7 +1426,53 @@ export class IRGenerator {
         return loadInstr as IRValue;
       }
     }
-    
+
+    // Handle array access through unary expression (dereference): *(ptr + i)
+    if (expr.array.type === NodeType.UNARY_EXPRESSION) {
+      const baseAddr = this.processExpression(expr.array);
+      const loadInstr = createInstruction(
+        this.genId(),
+        IROpCode.LOAD,
+        IRType.I32,
+        [baseAddr]
+      );
+      this.context.currentBlock.instructions.push(loadInstr);
+      return loadInstr as IRValue;
+    }
+
+    // Handle array access through postfix expression (function call returning pointer)
+    if (expr.array.type === NodeType.POSTFIX_EXPRESSION) {
+      const baseAddr = this.processExpression(expr.array);
+      const loadInstr = createInstruction(
+        this.genId(),
+        IROpCode.LOAD,
+        IRType.I32,
+        [baseAddr]
+      );
+      this.context.currentBlock.instructions.push(loadInstr);
+      return loadInstr as IRValue;
+    }
+
+    // Handle nested array access: ptr[i][j]
+    if (expr.array.type === NodeType.ARRAY_ACCESS) {
+      return this.processArrayAccess(expr.array as ArrayAccessNode);
+    }
+
+    // Handle array access through member access: struct.member[i]
+    if (expr.array.type === NodeType.MEMBER_ACCESS) {
+      const memberAccess = expr.array as MemberAccessNode;
+      const baseAddr = this.processExpression(memberAccess);
+      const loadInstr = createInstruction(
+        this.genId(),
+        IROpCode.LOAD,
+        IRType.I32,
+        [baseAddr]
+      );
+      this.context.currentBlock.instructions.push(loadInstr);
+      return loadInstr as IRValue;
+    }
+
+    console.error('DEBUG: processArrayAccess unsupported type:', expr.array.type);
     throw new Error('Unsupported array access type');
   }
   
@@ -1408,7 +1480,14 @@ export class IRGenerator {
     if (expr.type === NodeType.IDENTIFIER) {
       const ident = expr as IdentifierNode;
       const addr = this.context.valueMap.get(ident.name);
-      return addr || null;
+      if (addr) {
+        return addr;
+      }
+      const global = this.module.globals.find(g => g.name === ident.name);
+      if (global) {
+        return createValue(global.name, IRType.PTR);
+      }
+      return null;
     }
     
     if (expr.type === NodeType.MEMBER_ACCESS) {
