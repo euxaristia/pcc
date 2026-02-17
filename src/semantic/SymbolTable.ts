@@ -89,7 +89,7 @@ export class SymbolTable {
     
     const inCurrentScope = existingSymbols.some(s => s.scopeLevel === this.scopeLevel);
     if (inCurrentScope) {
-      return; // Allow re-declaration
+      throw new Error(`Symbol '${symbol.name}' already declared in current scope at line ${symbol.line}, column ${symbol.column}`);
     }
 
     existingSymbols.push({ ...symbol, scopeLevel: this.scopeLevel });

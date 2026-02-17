@@ -2071,26 +2071,14 @@ export class Parser {
   }
 
   private parseExpressionStatement(): ExpressionStatementNode {
-    try {
-      const expression = this.parseExpression();
-      this.consume(TokenType.SEMICOLON, 'Expected \';\' after expression');
-      return {
-        type: NodeType.EXPRESSION_STATEMENT,
-        expression,
-        line: expression.line,
-        column: expression.column,
-      };
-    } catch (e: any) {
-      while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
-        this.advance();
-      }
-      if (this.check(TokenType.SEMICOLON)) this.advance();
-      return {
-        type: NodeType.EXPRESSION_STATEMENT,
-        expression: { type: NodeType.EMPTY_EXPRESSION, line: 0, column: 0 } as ExpressionNode,
-        line: 0, column: 0,
-      };
-    }
+    const expression = this.parseExpression();
+    this.consume(TokenType.SEMICOLON, 'Expected \';\' after expression');
+    return {
+      type: NodeType.EXPRESSION_STATEMENT,
+      expression,
+      line: expression.line,
+      column: expression.column,
+    };
   }
 
   private parseExpression(): ExpressionNode {
