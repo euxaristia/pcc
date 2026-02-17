@@ -45,8 +45,8 @@ async function main() {
   }
 
   if (args.length !== 1) {
-    console.log('Usage: node dist/compile.js <source-file>');
-    console.log('Example: node dist/compile.js examples/hello.c');
+    console.log('Usage: pcc <source-file>');
+    console.log('Example: pcc examples/hello.c');
     process.exit(1);
   }
   

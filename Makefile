@@ -1,8 +1,7 @@
 # Makefile for PCC (Portable C Compiler)
 
 # Compiler and flags
-CC = node
-TSC = npx tsc
+BUN = bun
 INSTALL = install
 PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
@@ -13,45 +12,41 @@ DIST_DIR = dist
 TEST_DIR = __tests__
 
 # Main target
-all: build
+all: build-native
 
 # Build the TypeScript compiler
 build:
-	$(TSC)
+	$(BUN) run build
+
+# Build the native binary
+build-native:
+	bun run build:native
 
 # Run tests
 test:
-	npm test
+	bun test
 
 # Watch mode for development
 dev:
-	npm run dev
+	bun run dev
 
 # Install the compiler to system PATH
-install: build
+install: build-native
 	$(INSTALL) -d $(DESTDIR)$(BINDIR)
-	$(INSTALL) -d $(DESTDIR)$(PREFIX)/lib
-	$(INSTALL) -d $(DESTDIR)$(PREFIX)/lib/pcc
-	$(INSTALL) -m 755 pcc-wrapper $(DESTDIR)$(BINDIR)/pcc
-	cp -r $(DIST_DIR)/* $(DESTDIR)$(PREFIX)/lib/pcc/
-	chmod +x $(DESTDIR)$(BINDIR)/pcc
+	$(INSTALL) -m 755 pcc $(DESTDIR)$(BINDIR)/pcc
 	@echo "Running sanity test..."
 	@echo "int main() { return 0; }" > /tmp/pcc-test.c
-	@$(DESTDIR)$(BINDIR)/pcc /tmp/pcc-test.c -o /tmp/pcc-test 2>&1 && rm -f /tmp/pcc-test /tmp/pcc-test.c && echo "Sanity test passed!" || (echo "Sanity test FAILED - compiler not installed!"; rm -f /tmp/pcc-test /tmp/pcc-test.c; exit 1)
+	@$(DESTDIR)$(BINDIR)/pcc /tmp/pcc-test.c 2>&1 && rm -f /tmp/pcc-test.c /tmp/pcc-test.o && echo "Sanity test passed!" || (echo "Sanity test FAILED - compiler not installed!"; rm -f /tmp/pcc-test.c /tmp/pcc-test.o; exit 1)
 	@echo "PCC installed to $(DESTDIR)$(BINDIR)"
 	@echo "You can now use 'pcc' as a C compiler"
 
 # Install the compiler locally to user directory
-local-install: build
+local-install: build-native
 	$(INSTALL) -d $(HOME)/.local/bin
-	$(INSTALL) -d $(HOME)/.local/lib
-	$(INSTALL) -d $(HOME)/.local/lib/pcc
-	$(INSTALL) -m 755 pcc-wrapper $(HOME)/.local/bin/pcc
-	cp -r $(DIST_DIR)/* $(HOME)/.local/lib/pcc/
-	chmod +x $(HOME)/.local/bin/pcc
+	$(INSTALL) -m 755 pcc $(HOME)/.local/bin/pcc
 	@echo "Running sanity test..."
 	@echo "int main() { return 0; }" > /tmp/pcc-test.c
-	@$(HOME)/.local/bin/pcc /tmp/pcc-test.c -o /tmp/pcc-test 2>&1 && rm -f /tmp/pcc-test /tmp/pcc-test.c && echo "Sanity test passed!" || (echo "Sanity test FAILED - compiler not installed!"; rm -f /tmp/pcc-test /tmp/pcc-test.c; exit 1)
+	@$(HOME)/.local/bin/pcc /tmp/pcc-test.c 2>&1 && rm -f /tmp/pcc-test.c /tmp/pcc-test.o && echo "Sanity test passed!" || (echo "Sanity test FAILED - compiler not installed!"; rm -f /tmp/pcc-test.c /tmp/pcc-test.o; exit 1)
 	@echo "PCC installed to $(HOME)/.local/bin"
 	@echo "Make sure $(HOME)/.local/bin is in your PATH"
 

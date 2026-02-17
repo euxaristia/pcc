@@ -4,6 +4,8 @@ export interface Macro {
   body: string;
 }
 
+import { readFileSync } from 'fs';
+
 export interface PreprocessorOptions {
   includePaths?: string[];
   defines?: Record<string, string>;
@@ -183,7 +185,6 @@ export class Preprocessor {
       console.error('DEBUG: Including:', fullPath);
       
       try {
-        const { readFileSync } = require('fs');
         const content = readFileSync(fullPath, 'utf-8');
         
         // Mark as included
