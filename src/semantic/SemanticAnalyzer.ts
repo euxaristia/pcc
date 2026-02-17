@@ -776,8 +776,16 @@ export class SemanticAnalyzer {
     const symbol = this.symbolTable.lookup(node.name);
     
     if (!symbol) {
-      // Allow undeclared identifiers - they might be enum values or will be handled in IR generation
-      return { type: BuiltinTypes.INT, isError: false };
+      // Allow identifiers that look like enum values (typically UPPER_CASE with optional underscores)
+      // These will be handled in IR generation
+      if (/^[A-Z][A-Z0-9_]*$/.test(node.name)) {
+        return { type: BuiltinTypes.INT, isError: false };
+      }
+      return {
+        type: BuiltinTypes.VOID,
+        isError: true,
+        errorMessage: `Undeclared identifier '${node.name}'`,
+      };
     }
 
     return { type: symbol.type, isError: false };
