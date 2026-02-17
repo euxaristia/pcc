@@ -27,6 +27,7 @@ interface IRGenerationContext {
 export class IRGenerator {
   private context: IRGenerationContext;
   private module: IRModule;
+  private enumValues: Map<string, number> = new Map(); // For storing enum values like UNUSED, RUNNING, etc.
 
   constructor() {
     this.context = {
@@ -101,6 +102,7 @@ export class IRGenerator {
   }
 
   private processEnumDeclaration(enumDecl: EnumDeclarationNode): void {
+    console.log('DEBUG: Processing enum:', enumDecl.name, 'with values:', enumDecl.values?.map(v => v.name));
     // Handle case where enum values might be in varType instead
     let values = enumDecl.values;
     if (!values && (enumDecl as any).varType) {
@@ -114,8 +116,9 @@ export class IRGenerator {
     }
     
     // For now, we'll just treat enum values as integer constants
-    // In a full implementation, we'd store them in a symbol table
+    // Store them in a map for lookup
     let nextValue = 0;
+    const enumName = enumDecl.name || '';
     for (const enumValue of values) {
       if (enumValue.value) {
         // If there's an explicit value, parse it
@@ -123,10 +126,12 @@ export class IRGenerator {
         if ('value' in value) {
           nextValue = (value as IRConstant).value + 1;
         }
-      } else {
-        // Auto-increment
-        nextValue++;
       }
+      // Store enum value with name (e.g., "UNUSED" or "procstate.UNUSED")
+      const fullName = enumName ? `${enumName}.${enumValue.name}` : enumValue.name;
+      this.enumValues.set(enumValue.name, nextValue);
+      this.enumValues.set(fullName, nextValue);
+      nextValue++;
     }
   }
 
@@ -1113,6 +1118,11 @@ export class IRGenerator {
     // Check local variables
     const varAddr = this.context.valueMap.get(ident.name);
     if (!varAddr) {
+      // Check if it's an enum value
+      const enumValue = this.enumValues.get(ident.name);
+      if (enumValue !== undefined) {
+        return createConstant(enumValue, IRType.I32) as unknown as IRValue;
+      }
       throw new Error(`Variable ${ident.name} not declared`);
     }
 

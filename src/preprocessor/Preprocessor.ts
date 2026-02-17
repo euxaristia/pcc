@@ -286,21 +286,35 @@ export class Preprocessor {
         
         // Match function-like macro invocation: name(args)
         // Use word boundary to prevent partial matches (e.g., likely matching inside unlikely)
-        const funcRegex = new RegExp(`\\b${name}\\s*\\(([^)]*)\\)`);
-        const match = funcRegex.exec(result);
+        // Handle nested parentheses by counting them
+        const funcRegex = new RegExp(`\\b${name}\\s*\\(`);
+        let match = funcRegex.exec(result);
         if (match) {
-          const args = match[1].split(',').map(a => a.trim());
-          let body = macro.body;
-          
-          // Replace arguments in body
-          for (let i = 0; i < macro.args.length && i < args.length; i++) {
-            const regex = new RegExp(`(?<![a-zA-Z0-9_])${macro.args[i]}(?![a-zA-Z0-9_])`, 'g');
-            body = body.replace(regex, args[i]);
+          // Find the matching closing paren by counting nesting level
+          let start = match.index + match[0].length;
+          let depth = 1;
+          let end = start;
+          while (depth > 0 && end < result.length) {
+            if (result[end] === '(') depth++;
+            else if (result[end] === ')') depth--;
+            end++;
           }
-          
-          // Only replace the first occurrence
-          result = result.replace(funcRegex, body);
-          changed = true;
+          if (depth === 0) {
+            const argStr = result.slice(start, end - 1);
+            const args = argStr.split(',').map((a: string) => a.trim());
+            let body = macro.body;
+            
+            // Replace arguments in body
+            for (let i = 0; i < macro.args.length && i < args.length; i++) {
+              const regex = new RegExp(`(?<![a-zA-Z0-9_])${macro.args[i]}(?![a-zA-Z0-9_])`, 'g');
+              body = body.replace(regex, args[i]);
+            }
+            
+            // Replace the macro invocation
+            const fullMatch = result.slice(match.index, end);
+            result = result.replace(fullMatch, body);
+            changed = true;
+          }
         }
       }
     }
