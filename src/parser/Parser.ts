@@ -62,6 +62,7 @@ export enum NodeType {
   
   // Unary expressions
   SIZEOF_EXPRESSION = 'SIZEOF_EXPRESSION',
+  TYPEOF_EXPRESSION = 'TYPEOF_EXPRESSION',
   
   // Cast expression
   CAST_EXPRESSION = 'CAST_EXPRESSION',
@@ -286,6 +287,12 @@ export interface SizeofExpressionNode extends ASTNode {
   isType: boolean;  // true if sizeof(type), false if sizeof expression
 }
 
+export interface TypeofExpressionNode extends ASTNode {
+  type: NodeType.TYPEOF_EXPRESSION;
+  operand: TypeSpecifierNode | ExpressionNode;
+  isType: boolean;  // true if typeof(type), false if typeof expression
+}
+
 export interface CastExpressionNode extends ASTNode {
   type: NodeType.CAST_EXPRESSION;
   targetType: TypeSpecifierNode;
@@ -380,6 +387,7 @@ export type ExpressionNode =
   | StringLiteralNode
   | CharacterLiteralNode
   | SizeofExpressionNode
+  | TypeofExpressionNode
   | CastExpressionNode
   | ArrayAccessNode
   | MemberAccessNode
@@ -865,6 +873,47 @@ export class Parser {
   }
 
   private parseTypeSpecifier(): TypeSpecifierNode {
+    // Check for typeof as type specifier: typeof(x) varName
+    if (this.check(TokenType.TYPEOF)) {
+      this.advance(); // consume typeof
+      this.consume(TokenType.LEFT_PAREN, "Expected '(' after typeof");
+      
+      // Check if it's a type or an expression
+      let isType = false;
+      let typeName = '';
+      
+      if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || 
+          this.check(TokenType.VOID) || this.check(TokenType.STRUCT) ||
+          this.check(TokenType.LONG) || this.check(TokenType.SHORT) ||
+          this.check(TokenType.UNSIGNED) || this.check(TokenType.SIGNED) ||
+          this.check(TokenType.FLOAT) || this.check(TokenType.DOUBLE) ||
+          this.check(TokenType.CONST) || this.check(TokenType.VOLATILE) ||
+          this.check(TokenType.RESTRICT) ||
+          (this.check(TokenType.IDENTIFIER) && this.typedefs.has(this.peek().value))) {
+        // It's typeof(type)
+        isType = true;
+        const typeSpec = this.parseTypeSpecifier();
+        typeName = typeSpec.typeName;
+      } else {
+        // It's typeof(expression) - use a placeholder type
+        const expr = this.parseExpression();
+        // For now, use int as placeholder - the semantic analyzer would resolve this
+        typeName = 'int';
+      }
+      
+      this.consume(TokenType.RIGHT_PAREN, "Expected ')' after typeof");
+      
+      return {
+        type: NodeType.TYPE_SPECIFIER,
+        typeName: typeName,
+        isPointer: false,
+        pointerCount: 0,
+        qualifiers: [],
+        line: this.previous().line,
+        column: this.previous().column,
+      };
+    }
+    
     const qualifiers: ('const' | 'volatile' | 'restrict')[] = [];
     while (this.match(TokenType.CONST, TokenType.VOLATILE, TokenType.RESTRICT)) {
       qualifiers.push(this.previous().value as any);
@@ -1622,6 +1671,7 @@ export class Parser {
         this.check(TokenType.CONST) || this.check(TokenType.VOLATILE) || this.check(TokenType.RESTRICT) ||
         this.check(TokenType.STATIC) || this.check(TokenType.EXTERN) || this.check(TokenType.INLINE) ||
         this.check(TokenType.ENUM) || this.check(TokenType.UNION) ||
+        this.check(TokenType.TYPEOF) ||
         (this.check(TokenType.IDENTIFIER) && this.typedefs.has(this.peek().value))) {
       return this.parseDeclaration() as any;
     }
@@ -2257,9 +2307,9 @@ export class Parser {
       // Check if it's a type cast or compound literal by looking for a type keyword or typedef
       const nextToken = this.peek();
       // Also check for identifiers that could be types (like uintptr_t) - they are followed by ) or *
+      // But be more careful: only treat as type if it's a known typedef or followed by * (pointer declaration)
       const couldBeType = nextToken.type === TokenType.IDENTIFIER && 
         (this.typedefs.has(nextToken.value) || 
-         this.peek(1).type === TokenType.RIGHT_PAREN || 
          this.peek(1).type === TokenType.MULTIPLY);
       
       if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || 
@@ -2376,6 +2426,11 @@ export class Parser {
         return this.parseSizeof();
       }
       
+      // Handle typeof operator
+      if (this.match(TokenType.TYPEOF)) {
+        return this.parseTypeof();
+      }
+      
       expr = this.parsePostfix();
     } else {
       // We parsed a cast - now check for outer unary operators
@@ -2434,6 +2489,56 @@ export class Parser {
       const expr = this.parseUnary();
       return {
         type: NodeType.SIZEOF_EXPRESSION,
+        operand: expr,
+        isType: false,
+        line,
+        column,
+      };
+    }
+  }
+
+  private parseTypeof(): TypeofExpressionNode {
+    const line = this.previous().line;
+    const column = this.previous().column;
+    
+    // typeof(type) or typeof expression
+    if (this.match(TokenType.LEFT_PAREN)) {
+      // Check if it's a type or an expression
+      if (this.check(TokenType.INT) || this.check(TokenType.CHAR) || 
+          this.check(TokenType.VOID) || this.check(TokenType.STRUCT) ||
+          this.check(TokenType.LONG) || this.check(TokenType.SHORT) ||
+          this.check(TokenType.UNSIGNED) || this.check(TokenType.SIGNED) ||
+          this.check(TokenType.FLOAT) || this.check(TokenType.DOUBLE) ||
+          this.check(TokenType.CONST) || this.check(TokenType.VOLATILE) ||
+          this.check(TokenType.RESTRICT) ||
+          (this.check(TokenType.IDENTIFIER) && this.typedefs.has(this.peek().value))) {
+        // It's typeof(type)
+        const typeSpec = this.parseTypeSpecifier();
+        this.consume(TokenType.RIGHT_PAREN, "Expected ')' after type in typeof");
+        return {
+          type: NodeType.TYPEOF_EXPRESSION,
+          operand: typeSpec,
+          isType: true,
+          line,
+          column,
+        };
+      } else {
+        // It's typeof(expression)
+        const expr = this.parseExpression();
+        this.consume(TokenType.RIGHT_PAREN, "Expected ')' after expression in typeof");
+        return {
+          type: NodeType.TYPEOF_EXPRESSION,
+          operand: expr,
+          isType: false,
+          line,
+          column,
+        };
+      }
+    } else {
+      // typeof expression without parentheses
+      const expr = this.parseUnary();
+      return {
+        type: NodeType.TYPEOF_EXPRESSION,
         operand: expr,
         isType: false,
         line,

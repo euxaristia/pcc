@@ -800,6 +800,7 @@ export class IRGenerator {
         }
       }
       if (unary.operand.type !== NodeType.IDENTIFIER) {
+        console.error('DEBUG: address-of operand type:', unary.operand.type);
         throw new Error('Cannot take address of non-identifier');
       }
       const ident = unary.operand as IdentifierNode;

@@ -189,6 +189,7 @@ export class Lexer {
     ['__attribute__', TokenType.ATTRIBUTE],
     ['__extension__', TokenType.EXTENSION],
     ['__typeof__', TokenType.TYPEOF],
+    ['typeof', TokenType.TYPEOF],
   ]);
 
   constructor(input: string) {

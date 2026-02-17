@@ -18,6 +18,7 @@ export class Preprocessor {
   private fileName: string = '<input>';
   private ifStack: boolean[] = [];
   private skipBlock: boolean = false;
+  private includedFiles: Set<string> = new Set();
 
   constructor(options: PreprocessorOptions = {}) {
     this.includePaths = options.includePaths || [];
@@ -164,9 +165,19 @@ export class Preprocessor {
         ? fileName 
         : `${path}/${fileName}`;
       
+      // Skip if already included
+      if (this.includedFiles.has(fullPath)) {
+        console.error('DEBUG: Skipping already included:', fullPath);
+        return '';
+      }
+      console.error('DEBUG: Including:', fullPath);
+      
       try {
         const { readFileSync } = require('fs');
         const content = readFileSync(fullPath, 'utf-8');
+        
+        // Mark as included
+        this.includedFiles.add(fullPath);
         
         // Process the included content through the preprocessor
         return this.preprocessInclude(content, fullPath);
@@ -256,7 +267,8 @@ export class Preprocessor {
         if (!macro.args) continue;
         
         // Match function-like macro invocation: name(args)
-        const funcRegex = new RegExp(`${name}\\s*\\(([^)]*)\\)`, 'g');
+        // Use word boundary to prevent partial matches (e.g., likely matching inside unlikely)
+        const funcRegex = new RegExp(`\\b${name}\\s*\\(([^)]*)\\)`);
         const match = funcRegex.exec(result);
         if (match) {
           const args = match[1].split(',').map(a => a.trim());
@@ -264,9 +276,11 @@ export class Preprocessor {
           
           // Replace arguments in body
           for (let i = 0; i < macro.args.length && i < args.length; i++) {
-            body = body.replace(new RegExp(`\\b${macro.args[i]}\\b`, 'g'), args[i]);
+            const regex = new RegExp(`(?<![a-zA-Z0-9_])${macro.args[i]}(?![a-zA-Z0-9_])`, 'g');
+            body = body.replace(regex, args[i]);
           }
           
+          // Only replace the first occurrence
           result = result.replace(funcRegex, body);
           changed = true;
         }
