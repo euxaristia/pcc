@@ -46,10 +46,15 @@ export enum IROpCode {
   TRUNC = 'trunc',
   ZEXT = 'zext',
   SEXT = 'sext',
+  
+  // Unary Operations
+  NEG = 'neg',
+  MOV = 'mov',
 }
 
 export enum IRType {
   I8 = 'i8',
+  I16 = 'i16',
   I32 = 'i32',
   I64 = 'i64',
   F32 = 'f32',

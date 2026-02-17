@@ -282,7 +282,7 @@ export class ARM64InstructionSelector {
     return assembly;
   }
 
-  private getOperandString(operand: IRValue, getValue: (id: string) => string): string {
+  private getOperandString(operand: IRValue | IRConstant, getValue: (id: string) => string): string {
     if ('value' in operand) {
       return `#${(operand as IRConstant).value}`;
     }
@@ -538,9 +538,14 @@ export class ARM64AssemblyGenerator {
         const alignedStackSize = Math.ceil((finalStackSize + 16) / 16) * 16;
         
         if (ret.value) {
-          const retLocation = getValueLocation(ret.value.id);
-          const returnReg = isFloatingPointType(ret.value.type) ? this.callingConvention.floatReturnRegister : this.callingConvention.returnRegister;
-          assembly += `  mov ${returnReg.name}, ${retLocation}\n`;
+          if ('id' in ret.value) {
+            const retLocation = getValueLocation(ret.value.id);
+            const returnReg = isFloatingPointType(ret.value.type) ? this.callingConvention.floatReturnRegister : this.callingConvention.returnRegister;
+            assembly += `  mov ${returnReg.name}, ${retLocation}\n`;
+          } else {
+            const retReg = isFloatingPointType(ret.value.type) ? this.callingConvention.floatReturnRegister : this.callingConvention.returnRegister;
+            assembly += `  mov ${retReg.name}, #${(ret.value as IRConstant).value}\n`;
+          }
         }
         
         assembly += `  ldp x29, x30, [sp], #${alignedStackSize}\n`;

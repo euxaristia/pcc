@@ -336,6 +336,10 @@ export interface TernaryExpressionNode extends ASTNode {
   elseBranch: ExpressionNode;
 }
 
+export interface EmptyExpressionNode extends ASTNode {
+  type: NodeType.EMPTY_EXPRESSION;
+}
+
 export interface DoWhileStatementNode extends ASTNode {
   type: NodeType.DO_WHILE_STATEMENT;
   body: StatementNode;
@@ -395,7 +399,8 @@ export type ExpressionNode =
   | MemberAccessNode
   | TernaryExpressionNode
   | InitializerListNode
-  | CompoundLiteralNode;
+  | CompoundLiteralNode
+  | EmptyExpressionNode;
 
 export type StatementNode = 
   | DeclarationNode

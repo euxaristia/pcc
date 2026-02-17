@@ -3,7 +3,7 @@ import {
   IfStatementNode, WhileStatementNode, ForStatementNode, DoWhileStatementNode,
   GotoStatementNode, LabelStatementNode, ReturnStatementNode,
   ExpressionStatementNode, BinaryExpressionNode, UnaryExpressionNode,
-  TernaryExpressionNode, FunctionCallNode, IdentifierNode, NumberLiteralNode,
+  PostfixExpressionNode, TernaryExpressionNode, FunctionCallNode, IdentifierNode, NumberLiteralNode,
   StringLiteralNode, CharacterLiteralNode, NodeType, ExpressionNode, StatementNode,
   TypeSpecifierNode, SizeofExpressionNode, CastExpressionNode, MemberAccessNode,
   ArrayAccessNode, EnumDeclarationNode, UnionDeclarationNode, AttributeNode,
@@ -809,6 +809,18 @@ export class IRGenerator {
           }
           return varAddr;
         }
+      }
+      if (unary.operand.type === NodeType.MEMBER_ACCESS) {
+        const memberAccess = unary.operand as MemberAccessNode;
+        const baseAddr = this.getAddressOfExpression(memberAccess.object);
+        if (baseAddr) {
+          return baseAddr;
+        }
+      }
+      if (unary.operand.type === NodeType.POSTFIX_EXPRESSION && (unary.operand as PostfixExpressionNode).operator === '->') {
+        const postfix = unary.operand as PostfixExpressionNode;
+        const baseValue = this.processExpression(postfix.operand);
+        return baseValue as IRValue;
       }
       if (unary.operand.type !== NodeType.IDENTIFIER) {
         console.error('DEBUG: address-of operand type:', unary.operand.type);
