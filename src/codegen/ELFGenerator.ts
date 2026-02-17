@@ -72,7 +72,7 @@ export class ELFGenerator {
     });
   }
 
-  generateObjectFile(assemblyProgram: AssemblyProgram): Uint8Array {
+  generateObjectFile(assemblyProgram: AssemblyProgram, arch: string = 'x86-64'): Uint8Array {
     this.sections = [this.sections[0]]; // Keep null section
     this.symbols = [];
     this.stringTable.clear();
@@ -87,7 +87,7 @@ export class ELFGenerator {
     this.calculateLayout();
 
     // Generate the ELF file
-    return this.generateELFFile();
+    return this.generateELFFile(arch);
   }
 
   private parseAssemblyProgram(assemblyProgram: AssemblyProgram): void {
@@ -362,7 +362,7 @@ export class ELFGenerator {
     // This will be recalculated in generateELFFile
   }
 
-  private generateELFFile(): Uint8Array {
+  private generateELFFile(arch: string = 'x86-64'): Uint8Array {
     const data: number[] = [];
     
     // First calculate layout properly
@@ -386,7 +386,7 @@ export class ELFGenerator {
       abiversion: 0,
       pad: [0, 0, 0, 0, 0, 0, 0],
       type: 1,       // relocatable
-      machine: 0x3E, // x86-64
+      machine: arch === 'arm64' || arch === 'aarch64' ? 0xB7 : 0x3E, // 0xB7 = ARM64, 0x3E = x86-64
       version2: 1,
       entry: 0,
       phoff: 0,
@@ -480,7 +480,7 @@ export class ELFGenerator {
 }
 
 // Utility function to generate ELF object file
-export function generateELFObjectFile(assemblyProgram: AssemblyProgram): Uint8Array {
+export function generateELFObjectFile(assemblyProgram: AssemblyProgram, arch: string = 'x86-64'): Uint8Array {
   const generator = new ELFGenerator();
-  return generator.generateObjectFile(assemblyProgram);
+  return generator.generateObjectFile(assemblyProgram, arch);
 }

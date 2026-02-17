@@ -93,6 +93,96 @@ export const X8664CallingConvention: CallingConvention = {
   stackAlignment: 16,
 };
 
+// ARM64 (AArch64) calling convention - AAPCS64
+export const ARM64CallingConvention: CallingConvention = {
+  argumentRegisters: [
+    { name: 'x0', number: 0, callerSave: true, argument: 0 },
+    { name: 'x1', number: 1, callerSave: true, argument: 1 },
+    { name: 'x2', number: 2, callerSave: true, argument: 2 },
+    { name: 'x3', number: 3, callerSave: true, argument: 3 },
+    { name: 'x4', number: 4, callerSave: true, argument: 4 },
+    { name: 'x5', number: 5, callerSave: true, argument: 5 },
+    { name: 'x6', number: 6, callerSave: true, argument: 6 },
+    { name: 'x7', number: 7, callerSave: true, argument: 7 },
+  ],
+  floatArgumentRegisters: [
+    { name: 'v0', number: 0, callerSave: true, argument: 0, isXMM: true },
+    { name: 'v1', number: 1, callerSave: true, argument: 1, isXMM: true },
+    { name: 'v2', number: 2, callerSave: true, argument: 2, isXMM: true },
+    { name: 'v3', number: 3, callerSave: true, argument: 3, isXMM: true },
+    { name: 'v4', number: 4, callerSave: true, argument: 4, isXMM: true },
+    { name: 'v5', number: 5, callerSave: true, argument: 5, isXMM: true },
+    { name: 'v6', number: 6, callerSave: true, argument: 6, isXMM: true },
+    { name: 'v7', number: 7, callerSave: true, argument: 7, isXMM: true },
+  ],
+  callerSaveRegisters: [
+    { name: 'x0', number: 0, callerSave: true },
+    { name: 'x1', number: 1, callerSave: true },
+    { name: 'x2', number: 2, callerSave: true },
+    { name: 'x3', number: 3, callerSave: true },
+    { name: 'x4', number: 4, callerSave: true },
+    { name: 'x5', number: 5, callerSave: true },
+    { name: 'x6', number: 6, callerSave: true },
+    { name: 'x7', number: 7, callerSave: true },
+    { name: 'x8', number: 8, callerSave: true },
+    { name: 'x9', number: 9, callerSave: true },
+    { name: 'x10', number: 10, callerSave: true },
+    { name: 'x11', number: 11, callerSave: true },
+    { name: 'x12', number: 12, callerSave: true },
+    { name: 'x13', number: 13, callerSave: true },
+    { name: 'x14', number: 14, callerSave: true },
+    { name: 'x15', number: 15, callerSave: true },
+    { name: 'x16', number: 16, callerSave: true },
+    { name: 'x17', number: 17, callerSave: true },
+    { name: 'x18', number: 18, callerSave: true },
+  ],
+  floatCallerSaveRegisters: [
+    { name: 'v0', number: 0, callerSave: true, isXMM: true },
+    { name: 'v1', number: 1, callerSave: true, isXMM: true },
+    { name: 'v2', number: 2, callerSave: true, isXMM: true },
+    { name: 'v3', number: 3, callerSave: true, isXMM: true },
+    { name: 'v4', number: 4, callerSave: true, isXMM: true },
+    { name: 'v5', number: 5, callerSave: true, isXMM: true },
+    { name: 'v6', number: 6, callerSave: true, isXMM: true },
+    { name: 'v7', number: 7, callerSave: true, isXMM: true },
+    { name: 'v8', number: 8, callerSave: true, isXMM: true },
+    { name: 'v9', number: 9, callerSave: true, isXMM: true },
+    { name: 'v10', number: 10, callerSave: true, isXMM: true },
+    { name: 'v11', number: 11, callerSave: true, isXMM: true },
+    { name: 'v12', number: 12, callerSave: true, isXMM: true },
+    { name: 'v13', number: 13, callerSave: true, isXMM: true },
+    { name: 'v14', number: 14, callerSave: true, isXMM: true },
+    { name: 'v15', number: 15, callerSave: true, isXMM: true },
+    { name: 'v16', number: 16, callerSave: true, isXMM: true },
+    { name: 'v17', number: 17, callerSave: true, isXMM: true },
+    { name: 'v18', number: 18, callerSave: true, isXMM: true },
+  ],
+  calleeSaveRegisters: [
+    { name: 'x19', number: 0, callerSave: false },
+    { name: 'x20', number: 1, callerSave: false },
+    { name: 'x21', number: 2, callerSave: false },
+    { name: 'x22', number: 3, callerSave: false },
+    { name: 'x23', number: 4, callerSave: false },
+    { name: 'x24', number: 5, callerSave: false },
+    { name: 'x25', number: 6, callerSave: false },
+    { name: 'x26', number: 7, callerSave: false },
+    { name: 'x27', number: 8, callerSave: false },
+    { name: 'x28', number: 9, callerSave: false },
+    { name: 'x29', number: 10, callerSave: false }, // frame pointer
+    { name: 'x30', number: 11, callerSave: false }, // link register
+  ],
+  returnRegister: { name: 'x0', number: 0, callerSave: true },
+  floatReturnRegister: { name: 'v0', number: 0, callerSave: true, isXMM: true },
+  stackAlignment: 16,
+};
+
+export function getCallingConvention(arch: string): CallingConvention {
+  if (arch === 'arm64' || arch === 'aarch64') {
+    return ARM64CallingConvention;
+  }
+  return X8664CallingConvention;
+}
+
 export class RegisterAllocator {
   private allocatedRegisters: Set<Register> = new Set();
   private variableRegisters: Map<string, Register> = new Map();

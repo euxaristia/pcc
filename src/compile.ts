@@ -6,9 +6,11 @@ import { Parser } from './parser/Parser';
 import { SemanticAnalyzer } from './semantic/SemanticAnalyzer';
 import { IRGenerator } from './codegen/IRGenerator';
 import { generateX8664Assembly } from './codegen/AssemblyGenerator';
+import { generateARM64Assembly } from './codegen/ARM64AssemblyGenerator';
 import { generateELFObjectFile } from './codegen/ELFGenerator';
 import { prettyPrintIR } from './codegen/IR';
 import { Preprocessor } from './preprocessor/Preprocessor';
+import { getCallingConvention } from './codegen/TargetArchitecture';
 
 const VERBOSE = process.env.PCC_VERBOSE === '1';
 const TOKEN_DEBUG = process.env.PCC_TOKENS === '1';
@@ -16,7 +18,7 @@ const TOKEN_DEBUG = process.env.PCC_TOKENS === '1';
 /**
  * C Compiler Frontend Demo
  * 
- * Usage: node dist/compile.js <source-file>
+ * Usage: pcc <source-file> [--arch=x86-64|arm64]
  * 
  * This script demonstrates the complete C compilation pipeline:
  * 1. Lexical Analysis
@@ -30,6 +32,14 @@ const TOKEN_DEBUG = process.env.PCC_TOKENS === '1';
 async function main() {
   const args = process.argv.slice(2);
   
+  // Parse architecture flag
+  let arch = 'x86-64';
+  const archArg = args.find(arg => arg.startsWith('--arch='));
+  if (archArg) {
+    arch = archArg.split('=')[1];
+    args.splice(args.indexOf(archArg), 1);
+  }
+  
   if (args.includes('-v') || args.includes('-V') || args.includes('--version')) {
     console.log(`
  ____   ____ ____ 
@@ -37,16 +47,16 @@ async function main() {
 | |_) | |  | |    
 |  __/| |__| |___ 
 |_|    \\____\\____|
-                                                      
+                                                       
    Pickle C Compiler (pcc) v1.1.0-${process.env.PCC_COMMIT || 'dev'}
-   A modern TypeScript-based C compiler for x86-64
+   A modern TypeScript-based C compiler for ${arch}
     `);
     process.exit(0);
   }
 
   if (args.length !== 1) {
-    console.log('Usage: pcc <source-file>');
-    console.log('Example: pcc examples/hello.c');
+    console.log('Usage: pcc <source-file> [--arch=x86-64|arm64]');
+    console.log('Example: pcc examples/hello.c --arch=arm64');
     process.exit(1);
   }
   
@@ -103,8 +113,14 @@ async function main() {
     
     // Phase 5: Assembly Generation
     console.log(`\n=== Phase 5: Assembly Generation ===`);
-    const assembly = generateX8664Assembly(ir);
-    if (VERBOSE) console.log(`Generated x86-64 assembly:\n${assembly}`);
+    let assembly: string;
+    if (arch === 'arm64' || arch === 'aarch64') {
+      assembly = generateARM64Assembly(ir);
+      if (VERBOSE) console.log(`Generated ARM64 assembly:\n${assembly}`);
+    } else {
+      assembly = generateX8664Assembly(ir);
+      if (VERBOSE) console.log(`Generated x86-64 assembly:\n${assembly}`);
+    }
     
     // Phase 6: ELF Generation
     console.log(`\n=== Phase 6: ELF Object File Generation ===`);
@@ -113,7 +129,7 @@ async function main() {
       globals: [],
     };
     
-    const elf = generateELFObjectFile(assemblyProgram);
+    const elf = generateELFObjectFile(assemblyProgram, arch);
     
     // Write ELF file
     const elfFileName = sourceFile.replace(/\.c$/, '.o');
@@ -125,7 +141,7 @@ async function main() {
     console.log(`Magic: ${Array.from(elf.slice(0, 4)).map(b => String.fromCharCode(b)).join('')}`);
     console.log(`Class: ${elf[4] === 2 ? '64-bit' : '32-bit'}`);
     console.log(`Endianness: ${elf[5] === 1 ? 'Little' : 'Big'}`);
-    console.log(`Machine: ${elf[18] === 0x3E ? 'x86-64' : 'Unknown'}`);
+    console.log(`Machine: ${getMachineName(arch)}`);
     console.log(`Type: ${elf[16] === 1 ? 'Relocatable' : 'Unknown'}`);
     
     console.log(`\n=== Compilation Complete ===`);
@@ -135,6 +151,18 @@ async function main() {
   } catch (error) {
     console.error(`Compilation failed: ${(error as Error).message}`);
     process.exit(1);
+  }
+}
+
+function getMachineName(arch: string): string {
+  switch (arch) {
+    case 'arm64':
+    case 'aarch64':
+      return 'ARM64';
+    case 'x86-64':
+    case 'x86_64':
+    default:
+      return 'x86-64';
   }
 }
 
