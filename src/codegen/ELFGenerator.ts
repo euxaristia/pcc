@@ -362,6 +362,58 @@ export class ELFGenerator {
     // This will be recalculated in generateELFFile
   }
 
+  private writeELFHeader(data: number[], shoff: number, is32Bit: boolean): void {
+    const machine = is32Bit ? 0x03 : 0x3E;
+    
+    // ELF magic (4 bytes)
+    data.push(0x7F, 0x45, 0x4C, 0x46);
+    // EI_CLASS (1 byte)
+    data.push(is32Bit ? 1 : 2);
+    // EI_DATA (1 byte)  
+    data.push(1);
+    // EI_VERSION (1 byte)
+    data.push(1);
+    // EI_OSABI (1 byte)
+    data.push(0);
+    // EI_ABIVERSION (1 byte)
+    data.push(0);
+    // EI_PAD (7 bytes)  
+    data.push(0, 0, 0, 0, 0, 0, 0);
+    
+    // e_type (2 bytes) - offset 16
+    data.push(1, 0);
+    // e_machine (2 bytes) - offset 18
+    data.push(machine & 0xFF, (machine >> 8) & 0xFF);
+    // e_version (4 bytes) - offset 20
+    data.push(1, 0, 0, 0);
+    
+    if (is32Bit) {
+      // 32-bit ELF: entry, phoff, shoff are 4 bytes each
+      data.push(0, 0, 0, 0);  // e_entry
+      data.push(0, 0, 0, 0);  // e_phoff
+      data.push(...this.write32(shoff));  // e_shoff
+      data.push(0, 0, 0, 0);  // e_flags
+      data.push(...this.write16(52));  // e_ehsize (52 for 32-bit)
+      data.push(0, 0);  // e_phentsize
+      data.push(0, 0);  // e_phnum
+      data.push(...this.write16(40));  // e_shentsize (40 for 32-bit)
+      data.push(...this.write16(this.sections.length));  // e_shnum
+      data.push(...this.write16(this.sections.length - 1));  // e_shstrndx
+    } else {
+      // 64-bit ELF
+      data.push(0, 0, 0, 0, 0, 0, 0, 0);  // e_entry (8 bytes)
+      data.push(0, 0, 0, 0, 0, 0, 0, 0);  // e_phoff (8 bytes)
+      data.push(...this.write64(shoff));  // e_shoff (8 bytes)
+      data.push(0, 0, 0, 0);  // e_flags
+      data.push(...this.write16(64));  // e_ehsize (64 for 64-bit)
+      data.push(0, 0);  // e_phentsize
+      data.push(0, 0);  // e_phnum
+      data.push(...this.write16(64));  // e_shentsize (64 for 64-bit)
+      data.push(...this.write16(this.sections.length));  // e_shnum
+      data.push(...this.write16(this.sections.length - 1));  // e_shstrndx
+    }
+  }
+
   private generateELFFile(arch: string = 'x86-64'): Uint8Array {
     const data: number[] = [];
     
@@ -369,7 +421,8 @@ export class ELFGenerator {
     this.calculateLayout();
     
     // Calculate section header table offset
-    let currentOffset = 64; // ELF header size
+    const is32Bit = arch === 'i386' || arch === 'i486' || arch === 'i586' || arch === 'i686';
+    let currentOffset = is32Bit ? 52 : 64; // ELF header size (52 for 32-bit, 64 for 64-bit)
     for (const section of this.sections) {
       if (section.type === 8) continue; // Skip NOBITS sections for data
       currentOffset += section.data.length;
@@ -377,48 +430,8 @@ export class ELFGenerator {
     const shoff = currentOffset;
     
     // ELF Header
-    const header: ELFHeader = {
-      magic: [0x7F, 0x45, 0x4C, 0x46],
-      class_: 2,      // 64-bit
-      data: 1,       // little endian
-      version: 1,
-      osabi: 0,
-      abiversion: 0,
-      pad: [0, 0, 0, 0, 0, 0, 0],
-      type: 1,       // relocatable
-      machine: arch === 'arm64' || arch === 'aarch64' ? 0xB7 : 0x3E, // 0xB7 = ARM64, 0x3E = x86-64
-      version2: 1,
-      entry: 0,
-      phoff: 0,
-      shoff: shoff,
-      flags: 0,
-      ehsize: 64,
-      phentsize: 0,
-      phnum: 0,
-      shentsize: 64,
-      shnum: this.sections.length,
-      shstrndx: this.sections.length - 1,
-    };
-    
-    // Write ELF header
-    data.push(...header.magic);
-    data.push(header.class_, header.data, header.version, header.osabi, header.abiversion);
-    data.push(...header.pad);
-    data.push(header.type & 0xFF, (header.type >> 8) & 0xFF);
-    data.push(header.machine & 0xFF, (header.machine >> 8) & 0xFF);
-    data.push(...this.write32(header.version2));
-    
-    // Write 64-bit values (little endian)
-    data.push(...this.write64(header.entry));
-    data.push(...this.write64(header.phoff));
-    data.push(...this.write64(header.shoff));
-    data.push(...this.write32(header.flags));
-    data.push(...this.write16(header.ehsize));
-    data.push(...this.write16(header.phentsize));
-    data.push(...this.write16(header.phnum));
-    data.push(...this.write16(header.shentsize));
-    data.push(...this.write16(header.shnum));
-    data.push(...this.write16(header.shstrndx));
+    // Write ELF header (32-bit or 64-bit)
+    this.writeELFHeader(data, shoff, is32Bit);
     
     // Write section data
     for (const section of this.sections) {
@@ -436,14 +449,28 @@ export class ELFGenerator {
       
       data.push(...this.write32(nameIndex));
       data.push(...this.write32(section.type));
-      data.push(...this.write64(section.flags));
-      data.push(...this.write64(section.addr));
-      data.push(...this.write64(section.offset));
-      data.push(...this.write64(section.size));
-      data.push(...this.write32(section.link));
-      data.push(...this.write32(section.info));
-      data.push(...this.write64(section.addralign));
-      data.push(...this.write64(section.entsize));
+      
+      if (is32Bit) {
+        // 32-bit section header (40 bytes)
+        data.push(...this.write32(section.flags & 0xFFFFFFFF));  // sh_flags (4 bytes)
+        data.push(...this.write32(section.addr & 0xFFFFFFFF));  // sh_addr (4 bytes)
+        data.push(...this.write32(section.offset));  // sh_offset (4 bytes)
+        data.push(...this.write32(section.size));    // sh_size (4 bytes)
+        data.push(...this.write32(section.link));    // sh_link (4 bytes)
+        data.push(...this.write32(section.info));    // sh_info (4 bytes)
+        data.push(...this.write32(section.addralign)); // sh_addralign (4 bytes)
+        data.push(...this.write32(section.entsize));   // sh_entsize (4 bytes)
+      } else {
+        // 64-bit section header (64 bytes)
+        data.push(...this.write64(section.flags));
+        data.push(...this.write64(section.addr));
+        data.push(...this.write64(section.offset));
+        data.push(...this.write64(section.size));
+        data.push(...this.write32(section.link));
+        data.push(...this.write32(section.info));
+        data.push(...this.write64(section.addralign));
+        data.push(...this.write64(section.entsize));
+      }
     }
     
     return new Uint8Array(data);

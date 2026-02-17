@@ -425,6 +425,9 @@ export class IRGenerator {
       } else if (arrayAccess.array.type === NodeType.UNARY_EXPRESSION) {
         // Handle dereference: *(ptr + offset) = value
         targetAddr = this.processExpression(arrayAccess.array) as IRValue;
+      } else if (arrayAccess.array.type === NodeType.CAST_EXPRESSION) {
+        // Handle cast expression: (int*)buf[i] = value
+        targetAddr = this.processExpression(arrayAccess.array) as IRValue;
       } else if (arrayAccess.array.type === NodeType.MEMBER_ACCESS) {
         // Handle member access: struct.array[i] = value
         targetAddr = this.processExpression(arrayAccess.array) as IRValue;
@@ -1516,6 +1519,11 @@ export class IRGenerator {
       );
       this.context.currentBlock.instructions.push(loadInstr);
       return loadInstr as IRValue;
+    }
+
+    // Handle cast expression array access: (int*)buf[i]
+    if (expr.array.type === NodeType.CAST_EXPRESSION) {
+      return this.processExpression(expr.array) as IRValue;
     }
 
     console.error('DEBUG: processArrayAccess unsupported type:', expr.array.type);

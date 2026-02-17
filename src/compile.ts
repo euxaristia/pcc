@@ -47,7 +47,7 @@ async function main() {
 | |_) | |  | |    
 |  __/| |__| |___ 
 |_|    \\____\\____|
-                                                       
+                                                        
    Pickle C Compiler (pcc) v1.1.0-${process.env.PCC_COMMIT || 'dev'}
    A modern TypeScript-based C compiler for ${arch}
     `);
@@ -55,7 +55,7 @@ async function main() {
   }
 
   if (args.length !== 1) {
-    console.log('Usage: pcc <source-file> [--arch=x86-64|arm64]');
+    console.log('Usage: pcc <source-file> [--arch=x86-64|i386|arm64]');
     console.log('Example: pcc examples/hello.c --arch=arm64');
     process.exit(1);
   }
@@ -159,6 +159,11 @@ function getMachineName(arch: string): string {
     case 'arm64':
     case 'aarch64':
       return 'ARM64';
+    case 'i386':
+    case 'i486':
+    case 'i586':
+    case 'i686':
+      return 'i386';
     case 'x86-64':
     case 'x86_64':
     default:
