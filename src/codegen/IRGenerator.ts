@@ -125,7 +125,6 @@ export class IRGenerator {
   }
 
   private processEnumDeclaration(enumDecl: EnumDeclarationNode): void {
-    console.log('DEBUG: Processing enum:', enumDecl.name, 'with values:', enumDecl.values?.map(v => v.name));
     // Handle case where enum values might be in varType instead
     let values = enumDecl.values;
     if (!values && (enumDecl as any).varType) {

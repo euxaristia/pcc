@@ -376,8 +376,6 @@ export class ELFGenerator {
     }
     const shoff = currentOffset;
     
-    console.log('GENERATE_ELF: shoff should be:', shoff);
-    
     // ELF Header
     const header: ELFHeader = {
       magic: [0x7F, 0x45, 0x4C, 0x46],
@@ -392,17 +390,15 @@ export class ELFGenerator {
       version2: 1,
       entry: 0,
       phoff: 0,
-      shoff: shoff,  // Calculate actual offset
+      shoff: shoff,
       flags: 0,
-      ehsize: 64,   // ELF header size
+      ehsize: 64,
       phentsize: 0,
       phnum: 0,
-      shentsize: 64, // Section header size
+      shentsize: 64,
       shnum: this.sections.length,
-      shstrndx: this.sections.length - 1, // String table is last section
+      shstrndx: this.sections.length - 1,
     };
-    
-    console.log('GENERATE_ELF: header.phoff=', header.phoff, 'header.shoff=', header.shoff);
     
     // Write ELF header
     data.push(...header.magic);
@@ -410,19 +406,12 @@ export class ELFGenerator {
     data.push(...header.pad);
     data.push(header.type & 0xFF, (header.type >> 8) & 0xFF);
     data.push(header.machine & 0xFF, (header.machine >> 8) & 0xFF);
-    data.push(header.version2 & 0xFF, (header.version2 >> 8) & 0xFF);
+    data.push(...this.write32(header.version2));
     
     // Write 64-bit values (little endian)
-    console.log('DEBUG: About to push entry, phoff, shoff to data array');
-    console.log('DEBUG: entry bytes:', this.write64(header.entry));
     data.push(...this.write64(header.entry));
-    console.log('DEBUG: After entry, data.length =', data.length, 'data[24-31]:', data.slice(24, 32));
-    console.log('DEBUG: phoff bytes:', this.write64(header.phoff));
     data.push(...this.write64(header.phoff));
-    console.log('DEBUG: After phoff, data.length =', data.length, 'data[32-39]:', data.slice(32, 40));
-    console.log('DEBUG: shoff bytes:', this.write64(header.shoff));
     data.push(...this.write64(header.shoff));
-    console.log('DEBUG: After shoff, data.length =', data.length, 'data[32-48]:', data.slice(32, 48));
     data.push(...this.write32(header.flags));
     data.push(...this.write16(header.ehsize));
     data.push(...this.write16(header.phentsize));
@@ -475,7 +464,6 @@ export class ELFGenerator {
       (upper32 >> 16) & 0xFF,
       (upper32 >> 24) & 0xFF,
     ];
-    console.log('write64(', value, ') => lower=', lower32, 'upper=', upper32, 'bytes=', result);
     return result;
   }
 
