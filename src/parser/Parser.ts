@@ -349,6 +349,7 @@ export interface GotoStatementNode extends ASTNode {
 export interface LabelStatementNode extends ASTNode {
   type: NodeType.LABEL_STATEMENT;
   name: string;
+  statement: StatementNode;
 }
 
 export interface EnumDeclarationNode extends ASTNode {
@@ -1633,9 +1634,12 @@ export class Parser {
     if (this.check(TokenType.IDENTIFIER) && this.peek(1).type === TokenType.COLON) {
       const labelToken = this.consume(TokenType.IDENTIFIER, 'Expected label');
       this.consume(TokenType.COLON, 'Expected \':\' after label');
+      // After a label, parse the statement it labels
+      const statement = this.parseStatement();
       return {
         type: NodeType.LABEL_STATEMENT,
         name: labelToken.value,
+        statement,
         line: labelToken.line,
         column: labelToken.column,
       };
@@ -1671,7 +1675,7 @@ export class Parser {
         this.check(TokenType.CONST) || this.check(TokenType.VOLATILE) || this.check(TokenType.RESTRICT) ||
         this.check(TokenType.STATIC) || this.check(TokenType.EXTERN) || this.check(TokenType.INLINE) ||
         this.check(TokenType.ENUM) || this.check(TokenType.UNION) ||
-        this.check(TokenType.TYPEOF) ||
+        this.check(TokenType.TYPEOF) || this.check(TokenType.BOOL) ||
         (this.check(TokenType.IDENTIFIER) && this.typedefs.has(this.peek().value))) {
       return this.parseDeclaration() as any;
     }

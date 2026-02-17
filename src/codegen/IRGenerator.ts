@@ -619,6 +619,11 @@ export class IRGenerator {
     const labelBlock = this.createNewBlock(labelStmt.name);
     this.context.currentFunction.body.push(labelBlock);
     this.context.currentBlock = labelBlock;
+    
+    // Process the statement after the label
+    if (labelStmt.statement) {
+      this.processStatement(labelStmt.statement);
+    }
   }
 
   private processExpressionStatement(exprStmt: ExpressionStatementNode): void {
@@ -694,6 +699,11 @@ export class IRGenerator {
 
       case NodeType.SIZEOF_EXPRESSION:
         return this.processSizeofExpression(expr as SizeofExpressionNode);
+
+      case NodeType.TYPEOF_EXPRESSION:
+        // typeof is similar to sizeof but returns type info
+        // For now, treat it as int
+        return createConstant(4, IRType.I32);
 
       case NodeType.CAST_EXPRESSION:
         return this.processCastExpression(expr as CastExpressionNode);
