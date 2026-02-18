@@ -129,7 +129,7 @@ gcc -o program output.o
 ### Command Line Interface
 ```bash
 # Compile multiple files (use bun)
-for file in *.c; do
+for file in samples/root-c/*.c; do
   bun run src/compile.ts "$file"
 done
 
