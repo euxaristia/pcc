@@ -1,5 +1,9 @@
 *.ts linguist-language=TypeScript
 
+# Exclude C test/fixture sources from language statistics.
+# The pcc compiler implementation is TypeScript.
+*.c linguist-detectable=false
+
 # Exclude headers from language statistics
 include/** linguist-documentation=false
 *.h linguist-documentation=false
