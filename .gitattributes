@@ -7,3 +7,6 @@
 # Exclude headers from language statistics
 include/** linguist-documentation=false
 *.h linguist-documentation=false
+
+# Exclude vendored xv6 reference code from language statistics
+xv6-public/** linguist-vendored=true
