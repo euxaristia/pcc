@@ -10,3 +10,7 @@ include/** linguist-documentation=false
 
 # Exclude vendored xv6 reference code from language statistics
 xv6-public/** linguist-vendored=true
+
+# Exclude vendored Linux UAPI headers from language statistics
+include/linux/** linguist-vendored=true
+include/asm/** linguist-vendored=true
