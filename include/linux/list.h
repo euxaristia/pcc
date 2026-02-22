@@ -75,8 +75,8 @@ static inline int list_empty(const struct list_head *head)
         pos = n, n = pos->next)
 
 #define list_for_each_entry(pos, head, member) \
-    for (pos = list_entry((head)->next, typeof(*pos), member); \
+    for (pos = (typeof(pos))((char *)(head)->next - offsetof(typeof(*pos), member)); \
          &pos->member != (head); \
-         pos = list_entry(pos->member.next, typeof(*pos), member))
+         pos = (typeof(pos))((char *)pos->member.next - offsetof(typeof(*pos), member)))
 
 #endif /* _LINUX_LIST_H */
