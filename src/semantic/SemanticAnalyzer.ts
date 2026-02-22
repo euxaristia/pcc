@@ -584,6 +584,28 @@ export class SemanticAnalyzer {
         // Postfix increment/decrement: a++, a--
         return { type: BuiltinTypes.INT, isError: false };
 
+      case NodeType.STATEMENT_EXPRESSION:
+        // Statement expression: ({ ...; value; })
+        // Create a new scope for the statement expression
+        this.symbolTable.enterScope();
+        
+        // Analyze all statements inside to register declarations
+        if (node.statements) {
+          for (const stmt of node.statements) {
+            this.analyzeStatement(stmt);
+          }
+        }
+        
+        // Returns the type of the last expression in the statement list
+        let result = { type: BuiltinTypes.VOID, isError: false };
+        if (node.value) {
+          result = this.analyzeExpression(node.value);
+        }
+        
+        // Exit the scope
+        this.symbolTable.exitScope();
+        return result;
+
       default:
         return { type: BuiltinTypes.VOID, isError: true, errorMessage: 'Unknown expression type' };
     }

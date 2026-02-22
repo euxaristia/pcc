@@ -102,7 +102,9 @@ export class Preprocessor {
         // Unknown directive, skip
       } else {
         // Regular code - expand macros
-        const expanded = this.expandMacros(line);
+        let expanded = this.expandMacros(line);
+        // Handle string literal concatenation: "Hello " "world" -> "Hello world"
+        expanded = this.concatenateStrings(expanded);
         if (expanded.trim() || this.output.length > 0) {
           this.output.push(expanded);
         }
@@ -110,6 +112,23 @@ export class Preprocessor {
     }
 
     return this.output.join('\n');
+  }
+  
+  private concatenateStrings(line: string): string {
+    // Match adjacent string literals and concatenate them
+    // This handles "Hello " "world" -> "Hello world"
+    return line.replace(/"([^"\\]|\\.)*"\s*"([^"\\]|\\.)*"/g, (match) => {
+      // Extract all string parts
+      const parts = match.match(/"([^"\\]|\\.)*"/g);
+      if (!parts) return match;
+      
+      // Concatenate the strings (remove quotes and combine)
+      let result = '';
+      for (const part of parts) {
+        result += part.slice(1, -1); // Remove quotes
+      }
+      return `"${result}"`;
+    });
   }
 
   private handleDefine(line: string): void {
@@ -310,6 +329,9 @@ export class Preprocessor {
               body = body.replace(regex, args[i]);
             }
             
+            // Handle token pasting (##)
+            body = this.handleTokenPasting(body);
+            
             // Replace the macro invocation
             const fullMatch = result.slice(match.index, end);
             result = result.replace(fullMatch, body);
@@ -319,6 +341,16 @@ export class Preprocessor {
       }
     }
 
+    return result;
+  }
+  
+  private handleTokenPasting(body: string): string {
+    // Handle token pasting: a ## b -> ab
+    // This is a simplified implementation
+    let result = body;
+    while (result.includes('##')) {
+      result = result.replace(/\s*##\s*/g, '');
+    }
     return result;
   }
 

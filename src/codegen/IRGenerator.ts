@@ -773,6 +773,28 @@ export class IRGenerator {
       case NodeType.EMPTY_EXPRESSION:
         return createConstant(0, IRType.I32);
 
+      case NodeType.STATEMENT_EXPRESSION:
+        // Statement expression: ({ ...; value; })
+        // Process each statement, return the value of the last expression
+        if (expr.statements) {
+          for (let i = 0; i < expr.statements.length; i++) {
+            const stmt = expr.statements[i];
+            if (stmt.type === NodeType.DECLARATION) {
+              this.processVariableDeclaration(stmt as DeclarationNode);
+            } else if (stmt.type === NodeType.EXPRESSION_STATEMENT && stmt.expression) {
+              // If this is the last statement, evaluate it and return
+              if (i === expr.statements.length - 1) {
+                return this.processExpression(stmt.expression);
+              } else {
+                // Otherwise just evaluate for side effects
+                this.processExpression(stmt.expression);
+              }
+            }
+          }
+        }
+        // If no expression statement found, return void
+        return createConstant(0, IRType.I32);
+
       default:
         const never: never = expr;
         throw new Error(`Unsupported expression type: ${never}`);

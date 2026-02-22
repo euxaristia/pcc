@@ -68,6 +68,9 @@ export enum NodeType {
   // Cast expression
   CAST_EXPRESSION = 'CAST_EXPRESSION',
   
+  // Statement expression (GCC extension)
+  STATEMENT_EXPRESSION = 'STATEMENT_EXPRESSION',
+  
   // Array access
   ARRAY_ACCESS = 'ARRAY_ACCESS',
   
@@ -340,6 +343,12 @@ export interface EmptyExpressionNode extends ASTNode {
   type: NodeType.EMPTY_EXPRESSION;
 }
 
+export interface StatementExpressionNode extends ASTNode {
+  type: NodeType.STATEMENT_EXPRESSION;
+  statements: StatementNode[];
+  value?: ExpressionNode;
+}
+
 export interface DoWhileStatementNode extends ASTNode {
   type: NodeType.DO_WHILE_STATEMENT;
   body: StatementNode;
@@ -400,7 +409,8 @@ export type ExpressionNode =
   | TernaryExpressionNode
   | InitializerListNode
   | CompoundLiteralNode
-  | EmptyExpressionNode;
+  | EmptyExpressionNode
+  | StatementExpressionNode;
 
 export type StatementNode = 
   | DeclarationNode
@@ -810,6 +820,11 @@ export class Parser {
       }
     }
     
+    // Handle attributes between type and identifier (e.g., int __attribute__((unused)) foo())
+    while (this.match(TokenType.ATTRIBUTE)) {
+      this.parseAttributeInDeclaration();
+    }
+
     if (!this.check(TokenType.IDENTIFIER)) {
       if (this.check(TokenType.SEMICOLON)) {
         this.advance();
@@ -876,6 +891,10 @@ export class Parser {
       debugLog(`DEBUG: Exiting LEFT_PAREN block without returning, this.current=${this.current}`);
     }
     
+    while (this.match(TokenType.ATTRIBUTE)) {
+      this.parseAttributeInDeclaration();
+    }
+
     if (this.check(TokenType.LEFT_PAREN)) {
       
       return this.parseFunctionDeclaration(typeSpecifier, name, storageClasses.join(' '));
@@ -2737,8 +2756,39 @@ export class Parser {
       };
     }
     
-    // Handle regular parenthesized expressions
+    // Handle statement expressions: GCC extension ({ ... })
     if (this.match(TokenType.LEFT_PAREN)) {
+      if (this.match(TokenType.LEFT_BRACE)) {
+        // This is a statement expression: ({ ... })
+        const statements: any[] = [];
+        
+        while (!this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
+          statements.push(this.parseStatement());
+        }
+        
+        this.consume(TokenType.RIGHT_BRACE, 'Expected \'}\' after statement expression body');
+        
+        // Get the last expression statement's expression as the value
+        let value: ExpressionNode | undefined;
+        if (statements.length > 0) {
+          const lastStmt = statements[statements.length - 1];
+          if (lastStmt.type === NodeType.EXPRESSION_STATEMENT && lastStmt.expression) {
+            value = lastStmt.expression;
+          }
+        }
+        
+        this.consume(TokenType.RIGHT_PAREN, 'Expected \')\' after statement expression');
+        
+        return {
+          type: NodeType.STATEMENT_EXPRESSION,
+          statements,
+          value,
+          line: this.previous().line,
+          column: this.previous().column,
+        };
+      }
+      
+      // Regular parenthesized expression
       const expr = this.parseExpression();
       this.consume(TokenType.RIGHT_PAREN, 'Expected \')\' after expression');
       return expr;
@@ -2971,20 +3021,61 @@ export class Parser {
     const column = this.previous().column;
     
     // Parse the original type
-    const originalType = this.parseTypeSpecifier();
+    const baseType = this.parseTypeSpecifier();
     
-    // Get the alias name
-    const aliasToken = this.consume(TokenType.IDENTIFIER, 'Expected typedef alias name');
-    const alias = aliasToken.value;
+    // Handle function pointer typedef: typedef int (*alias)(args);
+    let alias: string;
+    let functionPointerType: string | undefined;
+    
+    if (this.check(TokenType.LEFT_PAREN)) {
+      // This is a function pointer typedef: int (*alias)(void)
+      this.advance(); // consume '('
+      
+      // Consume the asterisk
+      this.consume(TokenType.MULTIPLY, 'Expected * in function pointer typedef');
+      
+      // Get the alias name
+      const aliasToken = this.consume(TokenType.IDENTIFIER, 'Expected typedef alias name');
+      alias = aliasToken.value;
+      
+      this.consume(TokenType.RIGHT_PAREN, "Expected ')' after function pointer name");
+      
+      // Parse the parameter list if present
+      if (this.check(TokenType.LEFT_PAREN)) {
+        // Skip the parameters for now
+        let depth = 1;
+        let pos = this.current + 1; // Start after the opening (
+        while (depth > 0 && pos < this.tokens.length) {
+          if (this.tokens[pos].type === TokenType.LEFT_PAREN) {
+            depth++;
+          } else if (this.tokens[pos].type === TokenType.RIGHT_PAREN) {
+            depth--;
+          }
+          pos++;
+        }
+        // Advance to after the closing paren
+        this.current = pos;
+      }
+      
+      // Build a function pointer type string
+      functionPointerType = `${baseType.typeName} (*)()`;
+    } else {
+      // Simple typedef: typedef int alias;
+      const aliasToken = this.consume(TokenType.IDENTIFIER, 'Expected typedef alias name');
+      alias = aliasToken.value;
+    }
     
     this.consume(TokenType.SEMICOLON, "Expected ';' after typedef");
     
     // Store the typedef mapping
-    this.typedefs.set(alias, originalType);
+    const typedefType = functionPointerType 
+      ? { ...baseType, typeName: functionPointerType, isPointer: true, pointerCount: 1 }
+      : baseType;
+    this.typedefs.set(alias, typedefType);
     
     return {
       type: NodeType.TYPEDEF_DECLARATION,
-      originalType,
+      originalType: typedefType,
       alias,
       line,
       column,

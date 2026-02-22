@@ -5,4 +5,7 @@
 #include <linux/sysinfo.h>
 #include <linux/const.h>
 
+/* Kernel logging levels */
+#define KERN_INFO
+
 #endif /* _LINUX_KERNEL_H */
