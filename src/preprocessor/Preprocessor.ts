@@ -31,6 +31,20 @@ export class Preprocessor {
     this.macros.set('__GNUC__', { name: '__GNUC__', body: '11' });
     this.macros.set('__linux__', { name: '__linux__', body: '1' });
     this.macros.set('__x86_64__', { name: '__x86_64__', body: '1' });
+    this.macros.set('__aarch64__', { name: '__aarch64__', body: '1' });
+    this.macros.set('__ARM_ARCH', { name: '__ARM_ARCH', body: '8' });
+    this.macros.set('__ARM_FEATURE_UNALIGNED', { name: '__ARM_FEATURE_UNALIGNED', body: '1' });
+    this.macros.set('__aligned__(x)', { name: '__aligned__(x)', body: '__attribute__((aligned(x)))' });
+    this.macros.set('__attribute_const__', { name: '__attribute_const__', body: '__attribute__((__const__))' });
+    this.macros.set('__builtin_offsetof', { name: '__builtin_offsetof', body: 'offsetof' });
+    this.macros.set('__offsetof__', { name: '__offsetof__', body: 'offsetof' });
+    this.macros.set('__inline__', { name: '__inline__', body: 'inline' });
+    this.macros.set('__inline', { name: '__inline', body: 'inline' });
+    this.macros.set('__signed__', { name: '__signed__', body: 'signed' });
+    this.macros.set('__const__', { name: '__const__', body: 'const' });
+    this.macros.set('__volatile__', { name: '__volatile__', body: 'volatile' });
+    this.macros.set('__restrict', { name: '__restrict', body: 'restrict' });
+    this.macros.set('__attribute_packed__', { name: '__attribute_packed__', body: '__attribute__((__packed__))' });
     
     // Add user-defined macros
     if (options.defines) {
