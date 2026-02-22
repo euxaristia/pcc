@@ -362,8 +362,15 @@ export class ELFGenerator {
     // This will be recalculated in generateELFFile
   }
 
-  private writeELFHeader(data: number[], shoff: number, is32Bit: boolean): void {
-    const machine = is32Bit ? 0x03 : 0x3E;
+  private writeELFHeader(data: number[], shoff: number, is32Bit: boolean, arch: string = 'x86-64'): void {
+    let machine: number;
+    if (arch === 'arm64' || arch === 'aarch64') {
+      machine = 0xB7; // ARM64
+    } else if (arch === 'i386' || arch === 'i486' || arch === 'i586' || arch === 'i686') {
+      machine = 0x03; // i386
+    } else {
+      machine = is32Bit ? 0x03 : 0x3E; // x86-64
+    }
     
     // ELF magic (4 bytes)
     data.push(0x7F, 0x45, 0x4C, 0x46);
@@ -431,7 +438,7 @@ export class ELFGenerator {
     
     // ELF Header
     // Write ELF header (32-bit or 64-bit)
-    this.writeELFHeader(data, shoff, is32Bit);
+    this.writeELFHeader(data, shoff, is32Bit, arch);
     
     // Write section data
     for (const section of this.sections) {
