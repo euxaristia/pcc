@@ -826,7 +826,13 @@ export class Parser {
     }
 
     if (!this.check(TokenType.IDENTIFIER)) {
-      if (this.check(TokenType.SEMICOLON)) {
+      // Handle inline between type and identifier: int inline foo()
+      if (this.match(TokenType.INLINE)) {
+        storageClasses.push('inline');
+      }
+      if (this.check(TokenType.IDENTIFIER)) {
+        // continue
+      } else if (this.check(TokenType.SEMICOLON)) {
         this.advance();
         return null; // Empty declaration (e.g., struct foo { ... };)
       }
