@@ -1,16 +1,36 @@
 *.ts linguist-language=TypeScript
 
-# Exclude C test/fixture sources from language statistics.
 # The pcc compiler implementation is TypeScript.
-*.c linguist-detectable=false
+# Exclude all C/H files from language statistics as they are test cases or reference code.
+*.c linguist-detectable=false linguist-vendored=true
+*.h linguist-detectable=false linguist-vendored=true
+*.S linguist-detectable=false linguist-vendored=true
 
-# Exclude headers from language statistics
-include/** linguist-documentation=false
-*.h linguist-documentation=false
+# Explicitly exclude directories containing reference or test code
+test_files/** linguist-vendored=true linguist-detectable=false
+xv6-public/** linguist-vendored=true linguist-detectable=false
+xv6/** linguist-vendored=true linguist-detectable=false
+test-kernel/** linguist-vendored=true linguist-detectable=false
+samples/** linguist-vendored=true linguist-detectable=false
+include/** linguist-vendored=true linguist-detectable=false
+linux-6.18/** linguist-vendored=true linguist-detectable=false
+aports/** linguist-vendored=true linguist-detectable=false
+examples/** linguist-vendored=true linguist-detectable=false
 
-# Exclude vendored xv6 reference code from language statistics
-xv6-public/** linguist-vendored=true
-
-# Exclude vendored Linux UAPI headers from language statistics
-include/linux/** linguist-vendored=true
-include/asm/** linguist-vendored=true
+# Exclude scripts and demo files from language statistics
+demo.ts linguist-documentation=true
+setup-alpine-arm64.js linguist-documentation=true
+test-arm64-build.js linguist-documentation=true
+pcc-wrapper linguist-documentation=true
+PLAN.md linguist-documentation=true
+README.md linguist-documentation=true
+LICENSE linguist-documentation=true
+AGENTS.md linguist-documentation=true
+ARM64-SETUP.md linguist-documentation=true
+COMPLETION_REPORT.md linguist-documentation=true
+FINAL_SUMMARY.md linguist-documentation=true
+Makefile linguist-documentation=true
+jest.config.js linguist-documentation=true
+tsconfig.json linguist-documentation=true
+package.json linguist-documentation=true
+package-lock.json linguist-documentation=true
