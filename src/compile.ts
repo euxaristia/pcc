@@ -11,7 +11,7 @@ import { generateELFObjectFile } from './codegen/ELFGenerator';
 import { prettyPrintIR } from './codegen/IR';
 import { Preprocessor, PreprocessorOptions } from './preprocessor/Preprocessor';
 import { getCallingConvention } from './codegen/TargetArchitecture';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { existsSync } from 'fs';
 
 interface CompilerOptions {
@@ -281,7 +281,7 @@ function runCPreprocessor(source: string, sourceFile: string, options: CompilerO
   }
   args.push(sourceFile);
 
-  const result = execSync(`${cppPath} ${args.map(a => `"${a}"`).join(' ')}`, {
+  const result = execFileSync(cppPath, args, {
     encoding: 'utf-8',
     maxBuffer: 10 * 1024 * 1024,
   });

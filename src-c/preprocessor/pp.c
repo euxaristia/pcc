@@ -174,23 +174,44 @@ static PP_Token *read_string_token(PP_Context *ctx) {
     int line = ctx->line;
     int col = ctx->col;
     char quote = advance(ctx); // " or '
-    char buf[4096];
+    size_t cap = 4096;
+    char *buf = malloc(cap);
+    if (!buf) return NULL;
     size_t i = 0;
     buf[i++] = quote;
     while (peek(ctx, 0) != quote && peek(ctx, 0) != '\0' && peek(ctx, 0) != '\n') {
         char c = advance(ctx);
+        if (i + 2 >= cap) {
+            cap *= 2;
+            char *new_buf = realloc(buf, cap);
+            if (!new_buf) { free(buf); return NULL; }
+            buf = new_buf;
+        }
         buf[i++] = c;
         if (c == '\\' && peek(ctx, 0) != '\0') {
+            if (i + 1 >= cap) {
+                cap *= 2;
+                char *new_buf = realloc(buf, cap);
+                if (!new_buf) { free(buf); return NULL; }
+                buf = new_buf;
+            }
             buf[i++] = advance(ctx);
         }
-        if (i >= sizeof(buf) - 2) break;
     }
     if (peek(ctx, 0) == quote) {
+        if (i + 1 >= cap) {
+            cap *= 2;
+            char *new_buf = realloc(buf, cap);
+            if (!new_buf) { free(buf); return NULL; }
+            buf = new_buf;
+        }
         buf[i++] = advance(ctx);
     }
     buf[i] = '\0';
     PP_TokenType tt = (quote == '"') ? PPT_STRING : PPT_CHAR_LITERAL;
-    return make_token(ctx, tt, buf, line, col);
+    PP_Token *t = make_token(ctx, tt, buf, line, col);
+    free(buf);
+    return t;
 }
 
 static PP_Token *read_number_token(PP_Context *ctx) {
@@ -428,6 +449,7 @@ static Vector *expand_macro_invocation(PP_Context *ctx, PP_Macro *macro,
             ht_insert(param_map, macro->params[p], NULL);
         }
     }
+    Vector *va_args = NULL;
     if (macro->is_variadic) {
         // Combine remaining args into __VA_ARGS__
         if (macro->num_params <= num_args) {
@@ -445,6 +467,7 @@ static Vector *expand_macro_invocation(PP_Context *ctx, PP_Macro *macro,
                 }
             }
             ht_insert(param_map, "__VA_ARGS__", va);
+            va_args = va;
         }
     }
 
@@ -497,6 +520,12 @@ static Vector *expand_macro_invocation(PP_Context *ctx, PP_Macro *macro,
     }
 
     ht_free(param_map);
+    if (va_args) vec_free(va_args);
+    // Free args and inner vectors (tokens are owned by caller/arena)
+    for (size_t a = 0; a < args->len; a++) {
+        vec_free(vec_get(args, a));
+    }
+    vec_free(args);
     return result;
 }
 
@@ -517,6 +546,8 @@ static Vector *expand_all_macros(PP_Context *ctx, Vector *tokens) {
                 for (size_t k = 0; k < expanded->len; k++) {
                     vec_push(result, vec_get(expanded, k));
                 }
+                vec_free(repl);
+                vec_free(expanded);
                 i = end;
                 continue;
             }
@@ -721,8 +752,10 @@ static bool eval_defined(PP_Context *ctx, const char *name) {
     return ht_contains(ctx->macros, name);
 }
 
-// Very simple constant expression evaluator for #if/#elif.
-// Supports integers, defined(NAME), &&, ||, !, ==, !=, <, >, <=, >=, +, -, *, /, %
+// Recursive descent constant expression evaluator for #if/#elif.
+// Implements C operator precedence.
+// Precedence (lowest to highest): ||, &&, |, ^, &, ==/!=, </>/<=/>=, <</>>, +/-, */%/%, unary, primary
+
 static long eval_expr(PP_Context *ctx, Vector *tokens, int start, int end, int *consumed);
 
 static long eval_primary(PP_Context *ctx, Vector *tokens, int *idx, int end) {
@@ -734,8 +767,7 @@ static long eval_primary(PP_Context *ctx, Vector *tokens, int *idx, int end) {
     }
     if (strcmp(t->text, "(") == 0) {
         (*idx)++;
-        int start = *idx;
-        long val = eval_expr(ctx, tokens, start, end, idx);
+        long val = eval_expr(ctx, tokens, *idx, end, idx);
         if (*idx < end && strcmp(((PP_Token *)vec_get(tokens, *idx))->text, ")") == 0)
             (*idx)++;
         return val;
@@ -773,90 +805,203 @@ static long eval_primary(PP_Context *ctx, Vector *tokens, int *idx, int end) {
     return 0;
 }
 
-static long eval_expr(PP_Context *ctx, Vector *tokens, int start, int end, int *consumed) {
-    int idx = start;
-    // Simple left-to-right for now with basic precedence
-    long lhs = eval_primary(ctx, tokens, &idx, end);
-    while (idx < end) {
-        PP_Token *op = vec_get(tokens, idx);
-        if (strcmp(op->text, "&&") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
-            lhs = lhs && rhs;
-        } else if (strcmp(op->text, "||") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
-            lhs = lhs || rhs;
-        } else if (strcmp(op->text, "==") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
-            lhs = lhs == rhs;
-        } else if (strcmp(op->text, "!=") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
-            lhs = lhs != rhs;
-        } else if (strcmp(op->text, "<") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
-            lhs = lhs < rhs;
-        } else if (strcmp(op->text, ">") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
-            lhs = lhs > rhs;
-        } else if (strcmp(op->text, "<=") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
-            lhs = lhs <= rhs;
-        } else if (strcmp(op->text, ">=") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
-            lhs = lhs >= rhs;
-        } else if (strcmp(op->text, "+") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
-            lhs = lhs + rhs;
-        } else if (strcmp(op->text, "-") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
-            lhs = lhs - rhs;
-        } else if (strcmp(op->text, "*") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
+static long eval_mul_div_mod(PP_Context *ctx, Vector *tokens, int *idx, int end) {
+    long lhs = eval_primary(ctx, tokens, idx, end);
+    while (*idx < end) {
+        PP_Token *op = vec_get(tokens, *idx);
+        if (strcmp(op->text, "*") == 0) {
+            (*idx)++;
+            long rhs = eval_primary(ctx, tokens, idx, end);
             lhs = lhs * rhs;
         } else if (strcmp(op->text, "/") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
+            (*idx)++;
+            long rhs = eval_primary(ctx, tokens, idx, end);
             lhs = rhs != 0 ? lhs / rhs : 0;
         } else if (strcmp(op->text, "%") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
+            (*idx)++;
+            long rhs = eval_primary(ctx, tokens, idx, end);
             lhs = rhs != 0 ? lhs % rhs : 0;
-        } else if (strcmp(op->text, "&") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
-            lhs = lhs & rhs;
-        } else if (strcmp(op->text, "|") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
-            lhs = lhs | rhs;
-        } else if (strcmp(op->text, "^") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
-            lhs = lhs ^ rhs;
-        } else if (strcmp(op->text, "<<") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
+        } else {
+            break;
+        }
+    }
+    return lhs;
+}
+
+static long eval_add_sub(PP_Context *ctx, Vector *tokens, int *idx, int end) {
+    long lhs = eval_mul_div_mod(ctx, tokens, idx, end);
+    while (*idx < end) {
+        PP_Token *op = vec_get(tokens, *idx);
+        if (strcmp(op->text, "+") == 0) {
+            (*idx)++;
+            long rhs = eval_mul_div_mod(ctx, tokens, idx, end);
+            lhs = lhs + rhs;
+        } else if (strcmp(op->text, "-") == 0) {
+            (*idx)++;
+            long rhs = eval_mul_div_mod(ctx, tokens, idx, end);
+            lhs = lhs - rhs;
+        } else {
+            break;
+        }
+    }
+    return lhs;
+}
+
+static long eval_shift(PP_Context *ctx, Vector *tokens, int *idx, int end) {
+    long lhs = eval_add_sub(ctx, tokens, idx, end);
+    while (*idx < end) {
+        PP_Token *op = vec_get(tokens, *idx);
+        if (strcmp(op->text, "<<") == 0) {
+            (*idx)++;
+            long rhs = eval_add_sub(ctx, tokens, idx, end);
             lhs = lhs << rhs;
         } else if (strcmp(op->text, ">>") == 0) {
-            idx++;
-            long rhs = eval_primary(ctx, tokens, &idx, end);
+            (*idx)++;
+            long rhs = eval_add_sub(ctx, tokens, idx, end);
             lhs = lhs >> rhs;
         } else {
             break;
         }
     }
-    if (consumed) *consumed = idx;
     return lhs;
+}
+
+static long eval_relational(PP_Context *ctx, Vector *tokens, int *idx, int end) {
+    long lhs = eval_shift(ctx, tokens, idx, end);
+    while (*idx < end) {
+        PP_Token *op = vec_get(tokens, *idx);
+        if (strcmp(op->text, "<") == 0) {
+            (*idx)++;
+            long rhs = eval_shift(ctx, tokens, idx, end);
+            lhs = lhs < rhs;
+        } else if (strcmp(op->text, ">") == 0) {
+            (*idx)++;
+            long rhs = eval_shift(ctx, tokens, idx, end);
+            lhs = lhs > rhs;
+        } else if (strcmp(op->text, "<=") == 0) {
+            (*idx)++;
+            long rhs = eval_shift(ctx, tokens, idx, end);
+            lhs = lhs <= rhs;
+        } else if (strcmp(op->text, ">=") == 0) {
+            (*idx)++;
+            long rhs = eval_shift(ctx, tokens, idx, end);
+            lhs = lhs >= rhs;
+        } else {
+            break;
+        }
+    }
+    return lhs;
+}
+
+static long eval_equality(PP_Context *ctx, Vector *tokens, int *idx, int end) {
+    long lhs = eval_relational(ctx, tokens, idx, end);
+    while (*idx < end) {
+        PP_Token *op = vec_get(tokens, *idx);
+        if (strcmp(op->text, "==") == 0) {
+            (*idx)++;
+            long rhs = eval_relational(ctx, tokens, idx, end);
+            lhs = lhs == rhs;
+        } else if (strcmp(op->text, "!=") == 0) {
+            (*idx)++;
+            long rhs = eval_relational(ctx, tokens, idx, end);
+            lhs = lhs != rhs;
+        } else {
+            break;
+        }
+    }
+    return lhs;
+}
+
+static long eval_and(PP_Context *ctx, Vector *tokens, int *idx, int end) {
+    long lhs = eval_equality(ctx, tokens, idx, end);
+    while (*idx < end) {
+        PP_Token *op = vec_get(tokens, *idx);
+        if (strcmp(op->text, "&") == 0) {
+            (*idx)++;
+            long rhs = eval_equality(ctx, tokens, idx, end);
+            lhs = lhs & rhs;
+        } else {
+            break;
+        }
+    }
+    return lhs;
+}
+
+static long eval_xor(PP_Context *ctx, Vector *tokens, int *idx, int end) {
+    long lhs = eval_and(ctx, tokens, idx, end);
+    while (*idx < end) {
+        PP_Token *op = vec_get(tokens, *idx);
+        if (strcmp(op->text, "^") == 0) {
+            (*idx)++;
+            long rhs = eval_and(ctx, tokens, idx, end);
+            lhs = lhs ^ rhs;
+        } else {
+            break;
+        }
+    }
+    return lhs;
+}
+
+static long eval_or(PP_Context *ctx, Vector *tokens, int *idx, int end) {
+    long lhs = eval_xor(ctx, tokens, idx, end);
+    while (*idx < end) {
+        PP_Token *op = vec_get(tokens, *idx);
+        if (strcmp(op->text, "|") == 0) {
+            (*idx)++;
+            long rhs = eval_xor(ctx, tokens, idx, end);
+            lhs = lhs | rhs;
+        } else {
+            break;
+        }
+    }
+    return lhs;
+}
+
+static long eval_logical_and(PP_Context *ctx, Vector *tokens, int *idx, int end) {
+    long lhs = eval_or(ctx, tokens, idx, end);
+    while (*idx < end) {
+        PP_Token *op = vec_get(tokens, *idx);
+        if (strcmp(op->text, "&&") == 0) {
+            (*idx)++;
+            long rhs = eval_or(ctx, tokens, idx, end);
+            lhs = lhs && rhs;
+        } else {
+            break;
+        }
+    }
+    return lhs;
+}
+
+static long eval_logical_or(PP_Context *ctx, Vector *tokens, int *idx, int end) {
+    long lhs = eval_logical_and(ctx, tokens, idx, end);
+    while (*idx < end) {
+        PP_Token *op = vec_get(tokens, *idx);
+        if (strcmp(op->text, "||") == 0) {
+            (*idx)++;
+            long rhs = eval_logical_and(ctx, tokens, idx, end);
+            lhs = lhs || rhs;
+        } else {
+            break;
+        }
+    }
+    return lhs;
+}
+
+static long eval_expr(PP_Context *ctx, Vector *tokens, int start, int end, int *consumed) {
+    int idx = start;
+    long val = eval_logical_or(ctx, tokens, &idx, end);
+    if (consumed) *consumed = idx;
+    return val;
+}
+
+static void recompute_skipping(PP_Context *ctx) {
+    ctx->skipping = false;
+    for (int i = 0; i < ctx->cond_depth; i++) {
+        if (!ctx->cond_stack[i]) {
+            ctx->skipping = true;
+            break;
+        }
+    }
 }
 
 static void push_cond(PP_Context *ctx, bool val) {
@@ -865,18 +1010,13 @@ static void push_cond(PP_Context *ctx, bool val) {
         ctx->cond_stack = realloc(ctx->cond_stack, sizeof(bool) * ctx->cond_cap);
     }
     ctx->cond_stack[ctx->cond_depth++] = val;
-    ctx->skipping = !val;
+    recompute_skipping(ctx);
 }
 
 static void pop_cond(PP_Context *ctx) {
     if (ctx->cond_depth > 0) {
         ctx->cond_depth--;
-        // After popping, recalculate skipping based on current top
-        if (ctx->cond_depth > 0) {
-            ctx->skipping = !ctx->cond_stack[ctx->cond_depth - 1];
-        } else {
-            ctx->skipping = false;
-        }
+        recompute_skipping(ctx);
     }
 }
 
@@ -907,8 +1047,8 @@ static void handle_elif(PP_Context *ctx, Vector *tokens, int *idx) {
     // *idx already points past 'elif'
     // If we were not skipping (previous branch was true), now skip
     if (ctx->cond_depth > 0 && ctx->cond_stack[ctx->cond_depth - 1]) {
-        ctx->skipping = true;
         ctx->cond_stack[ctx->cond_depth - 1] = false; // mark this branch as taken
+        recompute_skipping(ctx);
         // Skip to end of line
         while (*idx < (int)tokens->len) {
             PP_Token *t = vec_get(tokens, *idx);
@@ -926,10 +1066,13 @@ static void handle_elif(PP_Context *ctx, Vector *tokens, int *idx) {
     }
     long val = eval_expr(ctx, tokens, start, *idx, NULL);
     if (val != 0) {
-        ctx->skipping = false;
         if (ctx->cond_depth > 0)
             ctx->cond_stack[ctx->cond_depth - 1] = true;
+    } else {
+        if (ctx->cond_depth > 0)
+            ctx->cond_stack[ctx->cond_depth - 1] = false;
     }
+    recompute_skipping(ctx);
 }
 
 static void handle_else(PP_Context *ctx, int *idx) {
@@ -937,8 +1080,12 @@ static void handle_else(PP_Context *ctx, int *idx) {
     if (ctx->cond_depth > 0) {
         // Toggle skipping: if previous was true, now skip; if false, now don't skip
         bool prev = ctx->cond_stack[ctx->cond_depth - 1];
-        ctx->skipping = prev;
-        if (!prev) ctx->cond_stack[ctx->cond_depth - 1] = true;
+        if (prev) {
+            ctx->cond_stack[ctx->cond_depth - 1] = false;
+        } else {
+            ctx->cond_stack[ctx->cond_depth - 1] = true;
+        }
+        recompute_skipping(ctx);
     }
 }
 
@@ -957,6 +1104,19 @@ static void preprocess_token_stream(PP_Context *ctx, Vector *tokens, Vector *out
         PP_Token *t = vec_get(tokens, i);
 
         if (t->type == PPT_HASH) {
+            // A preprocessing directive must be the first non-whitespace
+            // character on a line
+            bool at_line_start = (i == 0);
+            if (!at_line_start) {
+                PP_Token *prev = vec_get(tokens, i - 1);
+                if (prev->type == PPT_NEWLINE) at_line_start = true;
+            }
+            if (!at_line_start) {
+                // # in the middle of a line is not a directive
+                if (!ctx->skipping) vec_push(output, t);
+                i++;
+                continue;
+            }
             // Check if this is a directive line
             // Look ahead for identifier after optional whitespace
             int j = i + 1;
@@ -1052,6 +1212,8 @@ static void preprocess_token_stream(PP_Context *ctx, Vector *tokens, Vector *out
                     if (et->type != PPT_EOF)
                         vec_push(output, et);
                 }
+                vec_free(repl);
+                vec_free(expanded);
                 i = end;
                 continue;
             }

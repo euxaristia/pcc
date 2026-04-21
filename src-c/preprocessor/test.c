@@ -368,6 +368,31 @@ TEST(if_with_and_or) {
     pp_result_free(out);
 }
 
+TEST(operator_precedence) {
+    // 2 + 3 * 4 should be 14, not 20
+    char *out = preprocess("#if 2 + 3 * 4 == 14\nint a = 1;\n#else\nint a = 0;\n#endif", "test.c", NULL, 0, NULL, 0);
+    ASSERT_CONTAINS(out, "int a=1;");
+    ASSERT_NOT_CONTAINS(out, "int a=0;");
+    pp_result_free(out);
+}
+
+TEST(nested_if_skip) {
+    // Inner #if 1 inside #if 0 should still be skipped
+    char *out = preprocess(
+        "#if 0\n"
+        "  #if 1\n"
+        "    int x = 1;\n"
+        "  #endif\n"
+        "int y = 2;\n"
+        "#endif\n"
+        "int z = 3;",
+        "test.c", NULL, 0, NULL, 0);
+    ASSERT_NOT_CONTAINS(out, "int x");
+    ASSERT_NOT_CONTAINS(out, "int y");
+    ASSERT_CONTAINS(out, "int z=3;");
+    pp_result_free(out);
+}
+
 TEST(include_with_define) {
     // Create a temporary header file
     const char *header = "/tmp/pcc_test_header.h";
@@ -454,6 +479,8 @@ int main(void) {
     RUN(empty_define);
     RUN(multiple_defines);
     RUN(if_with_and_or);
+    RUN(operator_precedence);
+    RUN(nested_if_skip);
 
     // Include
     RUN(include_with_define);
