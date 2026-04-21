@@ -11,6 +11,8 @@ import { generateELFObjectFile } from './codegen/ELFGenerator';
 import { prettyPrintIR } from './codegen/IR';
 import { Preprocessor, PreprocessorOptions } from './preprocessor/Preprocessor';
 import { getCallingConvention } from './codegen/TargetArchitecture';
+import { execFileSync } from 'child_process';
+import { existsSync } from 'fs';
 
 interface CompilerOptions {
   sourceFiles: string[];
@@ -263,6 +265,29 @@ async function main() {
   }
 }
 
+function runCPreprocessor(source: string, sourceFile: string, options: CompilerOptions): string {
+  const cppPath = `${process.cwd()}/src-c/preprocessor/cpp`;
+  if (!existsSync(cppPath)) {
+    throw new Error('C preprocessor not built. Run: cd src-c/preprocessor && make cpp');
+  }
+
+  const args: string[] = [];
+  for (const path of options.includePaths) {
+    args.push('-I', path);
+  }
+  for (const def of Object.entries(options.defines)) {
+    const val = def[1] === '1' ? def[0] : `${def[0]}=${def[1]}`;
+    args.push('-D', val);
+  }
+  args.push(sourceFile);
+
+  const result = execFileSync(cppPath, args, {
+    encoding: 'utf-8',
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  return result;
+}
+
 async function compileFile(sourceFile: string, options: CompilerOptions) {
   // Read source file
   const sourceCode = await readFile(sourceFile, 'utf-8');
@@ -287,12 +312,31 @@ async function compileFile(sourceFile: string, options: CompilerOptions) {
 
   // Phase 0: Preprocessing
   logPhase('Phase 0: Preprocessing', options);
-  const preprocessorOpts: PreprocessorOptions = {
-    includePaths: options.includePaths,
-    defines: options.defines,
-  };
-  const preprocessor = new Preprocessor(preprocessorOpts);
-  const preprocessedCode = preprocessor.preprocess(sourceCode, sourceFile);
+
+  let preprocessedCode: string;
+  const useCPreprocessor = process.env.PCC_CPP === '1';
+  if (useCPreprocessor) {
+    try {
+      preprocessedCode = runCPreprocessor(sourceCode, sourceFile, options);
+      logInfo('Used C preprocessor', options);
+    } catch (err) {
+      logInfo('C preprocessor failed, falling back to TypeScript: ' + (err as Error).message, options);
+      const preprocessorOpts: PreprocessorOptions = {
+        includePaths: options.includePaths,
+        defines: options.defines,
+      };
+      const preprocessor = new Preprocessor(preprocessorOpts);
+      preprocessedCode = preprocessor.preprocess(sourceCode, sourceFile);
+    }
+  } else {
+    const preprocessorOpts: PreprocessorOptions = {
+      includePaths: options.includePaths,
+      defines: options.defines,
+    };
+    const preprocessor = new Preprocessor(preprocessorOpts);
+    preprocessedCode = preprocessor.preprocess(sourceCode, sourceFile);
+  }
+
   logInfo(`Preprocessed ${preprocessedCode.split('\n').length} lines`, options);
   if (options.verbose) console.log(`\n=== Preprocessed Code ===\n${preprocessedCode}`);
 
