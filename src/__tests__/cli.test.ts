@@ -30,7 +30,7 @@ beforeAll(() => {
 
 afterEach(() => {
   // Clean up temp files
-  const files = ['simple.c', 'test.o', 'test.s', 'test.i', 'header.h', 'out.o', 'macro.c'];
+  const files = ['simple.c', 'simple.o', 'test.o', 'test.s', 'test.i', 'header.h', 'out.o', 'macro.c', 'a.c', 'b.c'];
   files.forEach(f => {
     try { unlinkSync(tmpFile(f)); } catch {}
   });
