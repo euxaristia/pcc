@@ -60,6 +60,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ ${#SOURCE_FILES[@]} -eq 0 ]; then
+    # If version or help was requested, run PCC and exit normally
+    for flag in "${PCC_FLAGS[@]}"; do
+        if [[ "$flag" =~ ^(-v|-V|--version|-h|--help)$ ]]; then
+            $PCC_RUN "${PCC_FLAGS[@]}"
+            exit 0
+        fi
+    done
     echo "Usage: pcc [options] <source-file.c>"
     echo "Example: pcc hello.c -o hello"
     exit 1
@@ -108,9 +115,9 @@ fi
 # Link if not compile-only
 if [ "$COMPILE_ONLY" = false ] && [ ${#SOURCE_FILES[@]} -gt 0 ]; then
     if [ -n "$OUTPUT_FILE" ]; then
-        gcc "${OBJECT_FILES[@]}" -o "$OUTPUT_FILE" "${LINK_ARGS[@]}" 2>/dev/null
+        gcc "${OBJECT_FILES[@]}" -o "$OUTPUT_FILE" "${LINK_ARGS[@]}"
     else
-        gcc "${OBJECT_FILES[@]}" -o a.out "${LINK_ARGS[@]}" 2>/dev/null
+        gcc "${OBJECT_FILES[@]}" -o a.out "${LINK_ARGS[@]}"
     fi
 
     if [ $? -eq 0 ]; then

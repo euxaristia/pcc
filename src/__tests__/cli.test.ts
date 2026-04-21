@@ -60,6 +60,21 @@ describe('CLI argument parsing', () => {
     expect(result.exitCode).toBe(1);
     expect(result.stderr + result.stdout).toContain('no input files');
   });
+
+  it('should error on unrecognized options', () => {
+    writeFileSync(tmpFile('simple.c'), `int main() { return 42; }\n`);
+    const result = run(`-c --unknown-flag -o ${tmpFile('test.o')} ${tmpFile('simple.c')}`);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr + result.stdout).toContain('unrecognized option');
+  });
+
+  it('should error when -o is used with multiple source files', () => {
+    writeFileSync(tmpFile('a.c'), `int main() { return 42; }\n`);
+    writeFileSync(tmpFile('b.c'), `int foo() { return 1; }\n`);
+    const result = run(`-c -o ${tmpFile('out.o')} ${tmpFile('a.c')} ${tmpFile('b.c')}`);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr + result.stdout).toContain('cannot specify -o with multiple source files');
+  });
 });
 
 describe('Compilation modes', () => {

@@ -153,8 +153,8 @@ function parseArgs(rawArgs: string[]): CompilerOptions {
       }
       i++;
     } else if (arg.startsWith('-')) {
-      console.error(`Warning: unrecognized option '${arg}'`);
-      i++;
+      console.error(`Error: unrecognized option '${arg}'`);
+      process.exit(1);
     } else if (arg.endsWith('.c')) {
       options.sourceFiles.push(arg);
       i++;
@@ -240,8 +240,8 @@ async function main() {
     process.exit(1);
   }
 
-  if (options.sourceFiles.length > 1 && options.outputFile && !options.compileOnly && !options.preprocessOnly && !options.emitAssembly) {
-    console.error('Error: cannot specify -o with multiple files without -c/-S/-E');
+  if (options.sourceFiles.length > 1 && options.outputFile) {
+    console.error('Error: cannot specify -o with multiple source files');
     process.exit(1);
   }
 
@@ -283,9 +283,7 @@ async function compileFile(sourceFile: string, options: CompilerOptions) {
     outputPath = sourceFile.replace(/\.c$/, '.o');
   }
 
-  if (options.outputFile && options.sourceFiles.length > 1) {
-    outputPath = options.outputFile;
-  }
+  // Note: multiple source files with -o is rejected in main() before reaching here
 
   // Phase 0: Preprocessing
   logPhase('Phase 0: Preprocessing', options);
