@@ -655,6 +655,8 @@ static char *resolve_include(PP_Context *ctx, const char *filename, bool is_syst
     return NULL;
 }
 
+static void preprocess_token_stream(PP_Context *ctx, Vector *tokens, Vector *output);
+
 static void handle_include(PP_Context *ctx, Vector *tokens, int *idx,
                            Vector *output_tokens) {
     // *idx already points past 'include'
@@ -701,12 +703,8 @@ static void handle_include(PP_Context *ctx, Vector *tokens, int *idx,
     Vector *inc_tokens = pp_tokenize(ctx, contents);
     free(contents);
 
-    // Process directives in included file and expand
-    // For simplicity, just expand macros and add tokens to output
-    Vector *expanded = expand_all_macros(ctx, inc_tokens);
-    for (size_t i = 0; i < expanded->len; i++) {
-        vec_push(output_tokens, vec_get(expanded, i));
-    }
+    // Recursively preprocess the included file (directives + macro expansion)
+    preprocess_token_stream(ctx, inc_tokens, output_tokens);
 
     // Restore context (but keep macro definitions)
     ctx->src = old_src;
@@ -953,24 +951,7 @@ static void handle_endif(PP_Context *ctx, int *idx) {
 // Main preprocess entry point
 // ============================================================================
 
-char *preprocess(const char *source,
-                 const char *filename,
-                 const char **include_paths,
-                 int num_include_paths,
-                 const char **defines,
-                 int num_defines) {
-    PP_Context *ctx = make_context(include_paths, num_include_paths, defines, num_defines);
-    if (!ctx) return NULL;
-    ctx->filename = strdup(filename ? filename : "<input>");
-
-    Vector *tokens = pp_tokenize(ctx, source);
-    if (!tokens) {
-        free_context(ctx);
-        return NULL;
-    }
-
-    Vector *output = vec_create();
-
+static void preprocess_token_stream(PP_Context *ctx, Vector *tokens, Vector *output) {
     int i = 0;
     while (i < (int)tokens->len) {
         PP_Token *t = vec_get(tokens, i);
@@ -1079,6 +1060,26 @@ char *preprocess(const char *source,
         vec_push(output, t);
         i++;
     }
+}
+
+char *preprocess(const char *source,
+                 const char *filename,
+                 const char **include_paths,
+                 int num_include_paths,
+                 const char **defines,
+                 int num_defines) {
+    PP_Context *ctx = make_context(include_paths, num_include_paths, defines, num_defines);
+    if (!ctx) return NULL;
+    ctx->filename = strdup(filename ? filename : "<input>");
+
+    Vector *tokens = pp_tokenize(ctx, source);
+    if (!tokens) {
+        free_context(ctx);
+        return NULL;
+    }
+
+    Vector *output = vec_create();
+    preprocess_token_stream(ctx, tokens, output);
 
     // Serialize output tokens to string
     size_t buf_size = 4096;

@@ -368,6 +368,23 @@ TEST(if_with_and_or) {
     pp_result_free(out);
 }
 
+TEST(include_with_define) {
+    // Create a temporary header file
+    const char *header = "/tmp/pcc_test_header.h";
+    FILE *f = fopen(header, "w");
+    if (!f) { FAIL("could not create temp header"); }
+    fprintf(f, "#define VAL 123\n");
+    fclose(f);
+
+    const char *src = "#include \"/tmp/pcc_test_header.h\"\nint main() { return VAL; }";
+    const char *paths[] = {"/tmp"};
+    char *out = preprocess(src, "test.c", paths, 1, NULL, 0);
+    ASSERT_CONTAINS(out, "return 123;");
+    ASSERT_NOT_CONTAINS(out, "#define");
+    pp_result_free(out);
+    remove(header);
+}
+
 // ============================================================================
 // Main
 // ============================================================================
@@ -437,6 +454,9 @@ int main(void) {
     RUN(empty_define);
     RUN(multiple_defines);
     RUN(if_with_and_or);
+
+    // Include
+    RUN(include_with_define);
 
     printf("\n========================================\n");
     printf("Results: %d passed, %d failed, %d total\n",
