@@ -206,9 +206,10 @@ typedef struct ASTNode {
         } arr;
         /* NT_INITIALIZER_LIST */
         struct {
-            struct ASTNode **items;  /* each has optional designator */
-            char          **designators; /* NULL or name */
-            int             nitems;
+            struct ASTNode **items;        /* value expressions */
+            struct ASTNode **designators;  /* NULL or NT_IDENTIFIER (named) /
+                                             NT_NUMBER_LIT / expr (array [n]) */
+            int              nitems;
         } init_list;
         /* NT_STATEMENT_EXPR */
         struct {

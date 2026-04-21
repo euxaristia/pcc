@@ -82,11 +82,13 @@ static int advance(Lexer *l) {
 
 static Token *make_token(TokenType type, const char *buf, size_t blen,
                          int line, int col) {
-    Token *t  = malloc(sizeof(Token));
-    t->type   = type;
-    t->value  = malloc(blen + 1);
+    Token *t = malloc(sizeof(Token));
+    if (!t) return NULL;
+    t->value = malloc(blen + 1);
+    if (!t->value) { free(t); return NULL; }
     memcpy(t->value, buf, blen);
     t->value[blen] = '\0';
+    t->type   = type;
     t->line   = line;
     t->column = col;
     return t;
@@ -118,11 +120,18 @@ static void skip_block_comment(Lexer *l) {
 }
 
 static Token *read_preproc(Lexer *l, int line, int col) {
-    size_t start = l->pos - 1; /* '#' already not consumed; caller didn't advance */
-    advance(l); /* skip '#' */
-    /* read to end of logical line */
-    while (l->pos < l->len && peek(l, 0) != '\n')
+    size_t start = l->pos; /* '#' not yet consumed */
+    advance(l);             /* skip '#' */
+    /* read to end of logical line, honouring line continuations */
+    while (l->pos < l->len) {
+        if (peek(l, 0) == '\\' && peek(l, 1) == '\n') {
+            advance(l); /* skip '\\' */
+            advance(l); /* skip '\n' */
+            continue;
+        }
+        if (peek(l, 0) == '\n') break;
         advance(l);
+    }
     size_t blen = l->pos - start;
     return make_token(TT_PREPROCESSOR, l->input + start, blen, line, col);
 }
@@ -174,14 +183,13 @@ static Token *read_identifier(Lexer *l, int line, int col) {
         else break;
     }
     size_t blen = l->pos - start;
-    char tmp[256];
-    size_t cplen = blen < 255 ? blen : 255;
-    memcpy(tmp, l->input + start, cplen);
-    tmp[cplen] = '\0';
-    /* keyword lookup */
+    /* keyword lookup: compare directly against input to avoid a copy */
     for (int i = 0; KEYWORDS[i].word; i++) {
-        if (strcmp(tmp, KEYWORDS[i].word) == 0)
-            return make_token(KEYWORDS[i].type, tmp, strlen(tmp), line, col);
+        size_t kw_len = strlen(KEYWORDS[i].word);
+        if (blen == kw_len &&
+            strncmp(l->input + start, KEYWORDS[i].word, kw_len) == 0)
+            return make_token(KEYWORDS[i].type,
+                              KEYWORDS[i].word, kw_len, line, col);
     }
     return make_token(TT_IDENTIFIER, l->input + start, blen, line, col);
 }
@@ -320,13 +328,36 @@ top:
 Token **lexer_tokenize(Lexer *l, int *count) {
     int cap = 64, n = 0;
     Token **tokens = malloc(sizeof(Token *) * (size_t)cap);
+    if (!tokens) { *count = 0; return NULL; }
     Token *t;
-    while ((t = lexer_next_token(l))->type != TT_EOF) {
-        if (n >= cap) { cap *= 2; tokens = realloc(tokens, sizeof(Token *) * (size_t)cap); }
+    while ((t = lexer_next_token(l)) && t->type != TT_EOF) {
+        if (n >= cap) {
+            int new_cap = cap * 2;
+            Token **tmp = realloc(tokens, sizeof(Token *) * (size_t)new_cap);
+            if (!tmp) {
+                for (int i = 0; i < n; i++) token_free(tokens[i]);
+                free(tokens);
+                token_free(t);
+                *count = 0;
+                return NULL;
+            }
+            tokens = tmp;
+            cap = new_cap;
+        }
         tokens[n++] = t;
     }
-    /* include EOF */
-    if (n >= cap) { cap++; tokens = realloc(tokens, sizeof(Token *) * (size_t)cap); }
+    /* append EOF token */
+    if (n >= cap) {
+        Token **tmp = realloc(tokens, sizeof(Token *) * (size_t)(cap + 1));
+        if (!tmp) {
+            for (int i = 0; i < n; i++) token_free(tokens[i]);
+            free(tokens);
+            token_free(t);
+            *count = 0;
+            return NULL;
+        }
+        tokens = tmp;
+    }
     tokens[n++] = t;
     *count = n;
     return tokens;
