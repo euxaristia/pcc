@@ -520,6 +520,7 @@ static ASTNode *parse_statement(Parser *p) {
 
     /* expression statement */
     ASTNode *expr = parse_expression(p);
+    if (!expr) return NULL;
     consume(p, TT_SEMICOLON, "Expected ';' after expression");
     ASTNode *n = make_node(p, NT_EXPR_STMT, t->line, t->column);
     n->u.expr_stmt.expr = expr;
@@ -533,7 +534,17 @@ static ASTNode *parse_compound_statement(Parser *p) {
     ASTNode **stmts = palloc(p, sizeof(ASTNode*) * cap);
     while (!match(p, TT_RIGHT_BRACE)) {
         if (current(p)->type == TT_EOF) break;
-        ASTNode *stmt = parse_statement(p);
+        ASTNode *stmt = NULL;
+        TokenType ct = current(p)->type;
+        /* declaration inside block */
+        if (ct == TT_EXTERN || ct == TT_STATIC || ct == TT_INLINE || ct == TT_UNDERSCORE_INLINE ||
+            ct == TT_CONST || ct == TT_VOLATILE || ct == TT_RESTRICT || ct == TT_UNDERSCORE_RESTRICT ||
+            ct == TT_INT || ct == TT_CHAR || ct == TT_VOID || ct == TT_LONG || ct == TT_SHORT ||
+            ct == TT_UNSIGNED || ct == TT_SIGNED || ct == TT_FLOAT || ct == TT_DOUBLE || ct == TT_BOOL ||
+            ct == TT_STRUCT || ct == TT_UNION || ct == TT_ENUM || ct == TT_TYPEDEF) {
+            stmt = parse_declaration(p);
+        }
+        if (!stmt) stmt = parse_statement(p);
         if (!stmt) break;
         if (nstmts >= cap) {
             cap *= 2;
@@ -582,8 +593,20 @@ static ASTNode *parse_for_statement(Parser *p) {
     consume(p, TT_LEFT_PAREN, "Expected '(' after for");
     ASTNode *init = NULL;
     if (!match(p, TT_SEMICOLON)) {
-        init = parse_expression(p);
-        consume(p, TT_SEMICOLON, "Expected ';' after for init");
+        TokenType ct = current(p)->type;
+        int is_decl = 0;
+        if (ct == TT_EXTERN || ct == TT_STATIC || ct == TT_INLINE || ct == TT_UNDERSCORE_INLINE ||
+            ct == TT_CONST || ct == TT_VOLATILE || ct == TT_RESTRICT || ct == TT_UNDERSCORE_RESTRICT ||
+            ct == TT_INT || ct == TT_CHAR || ct == TT_VOID || ct == TT_LONG || ct == TT_SHORT ||
+            ct == TT_UNSIGNED || ct == TT_SIGNED || ct == TT_FLOAT || ct == TT_DOUBLE || ct == TT_BOOL ||
+            ct == TT_STRUCT || ct == TT_UNION || ct == TT_ENUM || ct == TT_TYPEDEF) {
+            init = parse_declaration(p);
+            is_decl = (init != NULL);
+        }
+        if (!init) init = parse_expression(p);
+        if (!is_decl) {
+            consume(p, TT_SEMICOLON, "Expected ';' after for init");
+        }
     }
     ASTNode *cond = NULL;
     if (!match(p, TT_SEMICOLON)) {
@@ -621,7 +644,7 @@ static ASTNode *parse_do_while_statement(Parser *p) {
 static ASTNode *parse_return_statement(Parser *p) {
     Token *t = current(p);
     ASTNode *val = NULL;
-    if (!match(p, TT_SEMICOLON))
+    if (current(p)->type != TT_SEMICOLON)
         val = parse_expression(p);
     consume(p, TT_SEMICOLON, "Expected ';' after return");
     ASTNode *n = make_node(p, NT_RETURN_STMT, t->line, t->column);
@@ -809,6 +832,7 @@ static TypeSpec *parse_declarator(Parser *p, TypeSpec *base_type, Token **out_na
             consume(p, TT_RIGHT_BRACKET, "Expected ']' after array size");
         }
         ts->is_pointer = 1; /* treat array as pointer for now */
+        ts->pointer_count++;
     }
 
     return ts;
@@ -950,7 +974,15 @@ static ASTNode *parse_program(Parser *p) {
     while (current(p)->type != TT_EOF) {
         /* Skip preprocessor directives */
         if (match(p, TT_PREPROCESSOR)) continue;
-        ASTNode *decl = parse_declaration(p);
+        ASTNode *decl = NULL;
+        TokenType ct = current(p)->type;
+        /* Top-level statement (e.g. return outside function) */
+        if (ct == TT_RETURN || ct == TT_IF || ct == TT_WHILE || ct == TT_FOR ||
+            ct == TT_DO || ct == TT_SWITCH || ct == TT_BREAK || ct == TT_CONTINUE ||
+            ct == TT_GOTO || ct == TT_ASM || ct == TT_VOLATILE || ct == TT_LEFT_BRACE) {
+            decl = parse_statement(p);
+        }
+        if (!decl) decl = parse_declaration(p);
         if (!decl) {
             /* error recovery: skip to next semicolon or closing brace */
             while (current(p)->type != TT_SEMICOLON &&

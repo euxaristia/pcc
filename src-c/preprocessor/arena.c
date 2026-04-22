@@ -1,32 +1,56 @@
 #include "arena.h"
+#include <stdlib.h>
+#include <string.h>
+
+typedef struct ArenaBlock {
+    struct ArenaBlock *next;
+    size_t cap;
+    size_t used;
+    char data[];
+} ArenaBlock;
+
+struct Arena {
+    ArenaBlock *first;
+    ArenaBlock *current;
+};
 
 Arena *arena_create(size_t cap) {
+    if (cap == 0) cap = 1024;
     Arena *a = malloc(sizeof(Arena));
     if (!a) return NULL;
-    a->buf = malloc(cap);
-    if (!a->buf) {
+    ArenaBlock *b = malloc(sizeof(ArenaBlock) + cap);
+    if (!b) {
         free(a);
         return NULL;
     }
-    a->len = 0;
-    a->cap = cap;
+    b->next = NULL;
+    b->cap = cap;
+    b->used = 0;
+    a->first = b;
+    a->current = b;
     return a;
 }
 
 void *arena_alloc(Arena *a, size_t size) {
     if (!a || size == 0) return NULL;
-    // Align to 8 bytes
-    size_t align = (8 - (a->len % 8)) % 8;
-    if (a->len + align + size > a->cap) {
-        size_t new_cap = a->cap * 2 + align + size;
-        char *new_buf = realloc(a->buf, new_cap);
-        if (!new_buf) return NULL;
-        a->buf = new_buf;
-        a->cap = new_cap;
+    size_t align = (8 - (a->current->used % 8)) % 8;
+    size_t total = align + size;
+    if (a->current->used + total > a->current->cap) {
+        size_t new_cap = a->current->cap * 2;
+        if (new_cap < total) new_cap = total;
+        ArenaBlock *b = malloc(sizeof(ArenaBlock) + new_cap);
+        if (!b) return NULL;
+        b->next = NULL;
+        b->cap = new_cap;
+        b->used = 0;
+        a->current->next = b;
+        a->current = b;
+        align = 0;
+        total = size;
     }
-    a->len += align;
-    void *p = a->buf + a->len;
-    a->len += size;
+    a->current->used += align;
+    void *p = a->current->data + a->current->used;
+    a->current->used += size;
     return p;
 }
 
@@ -56,6 +80,11 @@ char *arena_strndup(Arena *a, const char *s, size_t n) {
 
 void arena_free(Arena *a) {
     if (!a) return;
-    free(a->buf);
+    ArenaBlock *b = a->first;
+    while (b) {
+        ArenaBlock *next = b->next;
+        free(b);
+        b = next;
+    }
     free(a);
 }
