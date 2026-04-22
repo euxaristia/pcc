@@ -1,7 +1,10 @@
 *.ts linguist-language=TypeScript
 
-# The pcc compiler implementation is TypeScript.
-# Exclude all C/H files from language statistics as they are test cases or reference code.
+# The pcc compiler implementation is being ported to C in src-c/.
+# src-c/ contains the actual compiler code (preprocessor, lexer, parser).
+src-c/** linguist-detectable=true linguist-vendored=false
+
+# Exclude all other C/H files from language statistics as they are test cases or reference code.
 *.c linguist-detectable=false linguist-vendored=true
 *.h linguist-detectable=false linguist-vendored=true
 *.S linguist-detectable=false linguist-vendored=true
