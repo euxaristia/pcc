@@ -13,9 +13,12 @@ PARSER_OBJS = parser/parser.o
 # Semantic
 SEMANTIC_OBJS = semantic/semantic.o
 
+# Codegen
+CODEGEN_OBJS = codegen/ir.o codegen/irgen.o
+
 .PHONY: all clean test
 
-all: test_lexer test_parser test_semantic cpp
+all: test_lexer test_parser test_semantic test_irgen cpp
 
 # Lexer tests
 test_lexer: lexer/test_lexer.c lexer/lexer.o
@@ -36,12 +39,17 @@ cpp: $(PREPROC_OBJS) cpp.c
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-test: test_lexer test_parser test_semantic
+# IR generator tests
+test_irgen: codegen/test_irgen.c $(CODEGEN_OBJS) semantic/semantic.o parser/parser.o lexer/lexer.o $(PREPROC_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^
+
+test: test_lexer test_parser test_semantic test_irgen
 	./test_lexer
 	./test_parser
 	./test_semantic
+	./test_irgen
 
 clean:
-	rm -f $(PREPROC_OBJS) $(LEXER_OBJS) $(PARSER_OBJS) $(SEMANTIC_OBJS)
-	rm -f test_lexer test_parser test_semantic cpp
+	rm -f $(PREPROC_OBJS) $(LEXER_OBJS) $(PARSER_OBJS) $(SEMANTIC_OBJS) $(CODEGEN_OBJS)
+	rm -f test_lexer test_parser test_semantic test_irgen cpp
 	rm -f preprocessor/test_pp preprocessor/cpp preprocessor/*.o
