@@ -1,10 +1,13 @@
 *.ts linguist-language=TypeScript
 
-# The pcc compiler implementation is TypeScript.
-# Exclude all C/H files from language statistics as they are test cases or reference code.
+# Exclude all C/H/ASM files from language statistics as they are test cases or reference code.
 *.c linguist-detectable=false linguist-vendored=true
 *.h linguist-detectable=false linguist-vendored=true
 *.S linguist-detectable=false linguist-vendored=true
+
+# The pcc compiler implementation is being ported to C in src-c/.
+# This override must come AFTER the blanket *.c rule above to take precedence.
+src-c/** linguist-detectable=true linguist-vendored=false
 
 # Explicitly exclude directories containing reference or test code
 test_files/** linguist-vendored=true linguist-detectable=false
