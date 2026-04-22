@@ -243,12 +243,13 @@ static TokenType op2type(const char *s) {
     if (s[0]=='+' && s[1]=='+') return TT_INCREMENT;
     if (s[0]=='-' && s[1]=='-') return TT_DECREMENT;
     if (s[0]=='-' && s[1]=='>') return TT_ARROW;
-    if (s[0]=='<' && s[1]=='<') return TT_LEFT_SHIFT;
-    if (s[0]=='>' && s[1]=='>') return TT_RIGHT_SHIFT;
-    /* three char */
+    /* three char - must come before two char */
     if (s[0]=='<' && s[1]=='<' && s[2]=='=') return TT_LEFT_SHIFT_ASSIGN;
     if (s[0]=='>' && s[1]=='>' && s[2]=='=') return TT_RIGHT_SHIFT_ASSIGN;
     if (s[0]=='.' && s[1]=='.' && s[2]=='.') return TT_ELLIPSIS;
+    /* two char */
+    if (s[0]=='<' && s[1]=='<') return TT_LEFT_SHIFT;
+    if (s[0]=='>' && s[1]=='>') return TT_RIGHT_SHIFT;
     return TT_EOF; /* unknown */
 }
 
@@ -410,6 +411,24 @@ const char *token_type_name(TokenType type) {
     case TT_INCREMENT: return "++"; case TT_DECREMENT: return "--";
     case TT_TILDE: return "~"; case TT_DOT: return ".";
     case TT_COLON: return ":"; case TT_QUESTION: return "?";
+    case TT_BITWISE_AND: return "&"; case TT_BITWISE_OR: return "|";
+    case TT_BITWISE_XOR: return "^"; case TT_LEFT_SHIFT: return "<<";
+    case TT_RIGHT_SHIFT: return ">>";
+    case TT_PLUS_ASSIGN: return "+="; case TT_MINUS_ASSIGN: return "-=";
+    case TT_MULTIPLY_ASSIGN: return "*="; case TT_DIVIDE_ASSIGN: return "/=";
+    case TT_MODULO_ASSIGN: return "%="; case TT_AND_ASSIGN: return "&=";
+    case TT_OR_ASSIGN: return "|="; case TT_XOR_ASSIGN: return "^=";
+    case TT_LEFT_SHIFT_ASSIGN: return "<<="; case TT_RIGHT_SHIFT_ASSIGN: return ">>=";
+    case TT_NEWLINE: return "NEWLINE"; case TT_HASH: return "#";
+    case TT_REGISTER: return "register"; case TT_AUTO: return "auto";
+    case TT_BOOL: return "_Bool"; case TT_FLOAT: return "float";
+    case TT_DOUBLE: return "double"; case TT_RESTRICT: return "restrict";
+    case TT_NORETURN: return "_Noreturn"; case TT_ALIGNAS: return "_Alignas";
+    case TT_ALIGNOF: return "_Alignof"; case TT_STATIC_ASSERT: return "_Static_assert";
+    case TT_THREAD_LOCAL: return "_Thread_local"; case TT_ATTRIBUTE: return "__attribute__";
+    case TT_EXTENSION: return "__extension__"; case TT_TYPEOF: return "typeof";
+    case TT_UNDERSCORE_INLINE: return "__inline__"; case TT_UNDERSCORE_RESTRICT: return "__restrict__";
+    case TT_EXPORT_SYMBOL: return "EXPORT_SYMBOL"; case TT_INIT: return "__init__";
     default: return "UNKNOWN";
     }
 }

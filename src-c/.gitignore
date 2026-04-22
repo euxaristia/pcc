@@ -1,4 +1,6 @@
 *.o
 test_pp
 cpp
+test_lexer
+test_parser
 
