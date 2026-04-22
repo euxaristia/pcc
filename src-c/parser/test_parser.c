@@ -181,6 +181,23 @@ TEST(multi_declaration) {
     ASSERT_EQ(multi->u.multi.ndecls, 3);
 }
 
+TEST(pointer_multi_declaration) {
+    /* In C, `int *p, q;` means p is a pointer, q is not */
+    ASTNode *ast = parse_code("int *p, q;");
+    ASSERT_EQ(ast->u.program.ndecls, 1);
+    ASTNode *multi = ast->u.program.decls[0];
+    ASSERT_EQ(multi->type, NT_MULTI_DECLARATION);
+    ASSERT_EQ(multi->u.multi.ndecls, 2);
+    ASTNode *p_decl = multi->u.multi.decls[0];
+    ASTNode *q_decl = multi->u.multi.decls[1];
+    ASSERT_STR_EQ(p_decl->u.decl.name, "p");
+    ASSERT_EQ(p_decl->u.decl.var_type->is_pointer, 1);
+    ASSERT_EQ(p_decl->u.decl.var_type->pointer_count, 1);
+    ASSERT_STR_EQ(q_decl->u.decl.name, "q");
+    ASSERT_EQ(q_decl->u.decl.var_type->is_pointer, 0);
+    ASSERT_EQ(q_decl->u.decl.var_type->pointer_count, 0);
+}
+
 /* ======================================================================== */
 
 int main(void) {
@@ -198,6 +215,7 @@ int main(void) {
     RUN(ternary_expression);
     RUN(sizeof_expression);
     RUN(multi_declaration);
+    RUN(pointer_multi_declaration);
 
     printf("\n========================================\n");
     printf("Results: %d passed, %d failed, %d total\n",

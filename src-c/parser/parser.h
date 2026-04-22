@@ -268,12 +268,13 @@ typedef struct {
     Token **tokens;
     int     count;
     int     pos;
+    void   *arena;  /* Arena* for allocations */
 } Parser;
 
 void     parser_init(Parser *p, Token **tokens, int count);
 ASTNode *parser_parse(Parser *p);
 void     ast_free(ASTNode *node);
-TypeSpec *typespec_dup(TypeSpec *t);
+TypeSpec *typespec_dup(Parser *p, TypeSpec *t);
 void     typespec_free(TypeSpec *t);
 
 #endif /* PARSER_H */
