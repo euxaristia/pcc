@@ -538,13 +538,12 @@ static void analyze_compound_stmt(SemanticAnalyzer *sema, ASTNode *node);
 static void analyze_statement(SemanticAnalyzer *sema, ASTNode *node);
 static DataType analyze_expression(SemanticAnalyzer *sema, ASTNode *node);
 
-ErrorList sema_analyze(SemanticAnalyzer *sema, ASTNode *program) {
-    /* Clear previous errors without freeing (caller owns cleanup) */
-    sema->errors.len = 0;
+void sema_analyze(SemanticAnalyzer *sema, ASTNode *program) {
+    errorlist_free(&sema->errors);
+    errorlist_init(&sema->errors);
     symtab_enter_scope(&sema->symtab);
     analyze_program(sema, program);
     symtab_exit_scope(&sema->symtab);
-    return sema->errors;
 }
 
 static DataType parse_typespec(TypeSpec *ts) {

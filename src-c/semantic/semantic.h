@@ -136,7 +136,7 @@ void sema_init(SemanticAnalyzer *sema);
 void sema_free(SemanticAnalyzer *sema);
 
 /* Main entry point */
-ErrorList sema_analyze(SemanticAnalyzer *sema, ASTNode *program);
+void sema_analyze(SemanticAnalyzer *sema, ASTNode *program);
 
 void           tycheck_init(TypeChecker *tc);
 void           tycheck_declare_function(TypeChecker *tc, FunctionSig *sig);
