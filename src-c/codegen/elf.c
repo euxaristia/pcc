@@ -963,6 +963,41 @@ static void encode_data_line(const char *line, unsigned char *buf, size_t *off) 
         int nz = atoi(p);
         memset(buf + *off, 0, nz);
         *off += nz;
+    } else if (strncmp(p, ".string", 7) == 0 || strncmp(p, ".asciz", 6) == 0) {
+        p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        while (*p && *p != ' ' && *p != '\t') p++;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '"') {
+            p++;
+            while (*p && *p != '"') {
+                if (*p == '\\' && *(p+1)) {
+                    p++;
+                    switch (*p) {
+                        case 'n': buf[(*off)++] = '\n'; break;
+                        case 't': buf[(*off)++] = '\t'; break;
+                        case '0': buf[(*off)++] = '\0'; break;
+                        case 'r': buf[(*off)++] = '\r'; break;
+                        case '\\': buf[(*off)++] = '\\'; break;
+                        case '"': buf[(*off)++] = '"'; break;
+                        case 'x': {
+                            p++;
+                            char hex[3] = {p[0], p[1], 0};
+                            buf[(*off)++] = (unsigned char)strtol(hex, NULL, 16);
+                            p++;
+                            break;
+                        }
+                        default: buf[(*off)++] = *p; break;
+                    }
+                } else {
+                    buf[(*off)++] = *p;
+                }
+                p++;
+            }
+            if (strncmp(line, ".string", 7) == 0 || strncmp(line, ".asciz", 6) == 0) {
+                buf[(*off)++] = '\0'; /* null terminator */
+            }
+        }
     }
 }
 

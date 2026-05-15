@@ -14,6 +14,12 @@ typedef struct ValueMapEntry {
     struct ValueMapEntry *next;
 } ValueMapEntry;
 
+typedef struct EnumEntry {
+    char              *name;
+    int                value;
+    struct EnumEntry  *next;
+} EnumEntry;
+
 typedef struct IRGenerator {
     IRModule          *module;
     IRFunction        *current_function;
@@ -21,6 +27,7 @@ typedef struct IRGenerator {
     int                next_id;
     int                label_counter;
     ValueMapEntry     *value_map[256];
+    EnumEntry         *enum_values[256];
 } IRGenerator;
 
 /* ========================================================================
@@ -71,6 +78,50 @@ static void value_map_clear(IRGenerator *gen) {
             e = next;
         }
         gen->value_map[i] = NULL;
+    }
+}
+
+static void enum_value_set(IRGenerator *gen, const char *name, int value) {
+    unsigned int h = hash_name(name);
+    EnumEntry *e = gen->enum_values[h];
+    while (e) {
+        if (strcmp(e->name, name) == 0) {
+            e->value = value;
+            return;
+        }
+        e = e->next;
+    }
+    e = calloc(1, sizeof(EnumEntry));
+    e->name = strdup(name);
+    e->value = value;
+    e->next = gen->enum_values[h];
+    gen->enum_values[h] = e;
+}
+
+static int enum_value_get(IRGenerator *gen, const char *name, int *found) {
+    unsigned int h = hash_name(name);
+    EnumEntry *e = gen->enum_values[h];
+    while (e) {
+        if (strcmp(e->name, name) == 0) {
+            *found = 1;
+            return e->value;
+        }
+        e = e->next;
+    }
+    *found = 0;
+    return 0;
+}
+
+static void enum_values_clear(IRGenerator *gen) {
+    for (int i = 0; i < 256; i++) {
+        EnumEntry *e = gen->enum_values[i];
+        while (e) {
+            EnumEntry *next = e->next;
+            free(e->name);
+            free(e);
+            e = next;
+        }
+        gen->enum_values[i] = NULL;
     }
 }
 
@@ -142,6 +193,30 @@ static void process_global_declaration(IRGenerator *gen, ASTNode *decl) {
     }
     
     ir_module_add_global(gen->module, g);
+}
+
+static void process_enum_declaration(IRGenerator *gen, ASTNode *node) {
+    int next_value = 0;
+    for (int i = 0; i < node->u.enum_decl.nenum; i++) {
+        const char *name = node->u.enum_decl.enum_names[i];
+        ASTNode *init = node->u.enum_decl.enum_values[i];
+        if (init) {
+            if (init->type == NT_NUMBER_LIT) {
+                next_value = (int)atof(init->u.number.value);
+            } else if (init->type == NT_IDENTIFIER) {
+                int found = 0;
+                int val = enum_value_get(gen, init->u.ident.name, &found);
+                if (found) next_value = val;
+            }
+        }
+        enum_value_set(gen, name, next_value);
+        if (node->u.enum_decl.name) {
+            char qualified[512];
+            snprintf(qualified, sizeof(qualified), "%s.%s", node->u.enum_decl.name, name);
+            enum_value_set(gen, qualified, next_value);
+        }
+        next_value++;
+    }
 }
 
 /* ========================================================================
@@ -763,7 +838,13 @@ static void *process_identifier(IRGenerator *gen, ASTNode *expr) {
     /* Check local */
     IRValue *addr = value_map_get(gen, name);
     if (!addr) {
-        /* Could be an enum constant - return 0 for now */
+        /* Check enum constants */
+        int found = 0;
+        int enum_val = enum_value_get(gen, name, &found);
+        if (found) {
+            return ir_create_constant(enum_val, IR_I32);
+        }
+        /* Fallback: return 0 for unnamed constants */
         return ir_create_constant(0, IR_I32);
     }
     
@@ -871,6 +952,37 @@ static void *process_expression(IRGenerator *gen, ASTNode *expr) {
         IRGlobal *g = calloc(1, sizeof(IRGlobal));
         g->name = strdup(str_name);
         g->type = IR_PTR;
+        
+        /* Extract string content (strip quotes and unescape) */
+        const char *raw = expr->u.str_lit.value;
+        int raw_len = strlen(raw);
+        if (raw_len >= 2 && raw[0] == '"' && raw[raw_len - 1] == '"') {
+            int content_len = raw_len - 2;
+            char *content = malloc(content_len + 1);
+            int out = 0;
+            for (int i = 1; i < raw_len - 1; i++) {
+                if (raw[i] == '\\' && i + 1 < raw_len - 1) {
+                    i++;
+                    switch (raw[i]) {
+                        case 'n': content[out++] = '\n'; break;
+                        case 't': content[out++] = '\t'; break;
+                        case '0': content[out++] = '\0'; break;
+                        case 'r': content[out++] = '\r'; break;
+                        case '\\': content[out++] = '\\'; break;
+                        case '"': content[out++] = '"'; break;
+                        case '\'': content[out++] = '\''; break;
+                        default: content[out++] = raw[i]; break;
+                    }
+                } else {
+                    content[out++] = raw[i];
+                }
+            }
+            content[out] = '\0';
+            g->string_data = content;
+            g->string_len = out;
+            g->is_string = 1;
+        }
+        
         ir_module_add_global(gen->module, g);
         return ir_create_value(str_name, IR_PTR);
     }
@@ -913,6 +1025,7 @@ IRGenerator *irgen_create(void) {
 void irgen_free(IRGenerator *gen) {
     if (!gen) return;
     value_map_clear(gen);
+    enum_values_clear(gen);
     ir_module_free(gen->module);
     free(gen);
 }
@@ -920,11 +1033,20 @@ void irgen_free(IRGenerator *gen) {
 IRModule *irgen_generate(IRGenerator *gen, ASTNode *program) {
     if (!gen || !program || program->type != NT_PROGRAM) return gen->module;
     
-    /* First pass: globals */
+    /* First pass: globals and enums */
     for (int i = 0; i < program->u.program.ndecls; i++) {
         ASTNode *decl = program->u.program.decls[i];
         if (decl->type == NT_DECLARATION) {
             process_global_declaration(gen, decl);
+        } else if (decl->type == NT_ENUM_DECL) {
+            process_enum_declaration(gen, decl);
+        } else if (decl->type == NT_COMPOUND_STMT) {
+            /* enum { ... } x; wrapped in compound */
+            for (int j = 0; j < decl->u.compound.nstmts; j++) {
+                if (decl->u.compound.stmts[j]->type == NT_ENUM_DECL) {
+                    process_enum_declaration(gen, decl->u.compound.stmts[j]);
+                }
+            }
         }
     }
     

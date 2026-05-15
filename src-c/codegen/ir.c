@@ -224,6 +224,7 @@ void ir_module_free(IRModule *mod) {
             for (int j = 0; j < g->array_size; j++) free(g->array_init[j]);
             free(g->array_init);
         }
+        if (g->string_data) free(g->string_data);
         free(g);
     }
     free(mod->globals);

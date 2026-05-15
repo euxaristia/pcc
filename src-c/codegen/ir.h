@@ -123,6 +123,9 @@ typedef struct IRGlobal {
     IRConstant **array_init;      /* NULL if not array */
     int         array_size;
     int         is_array;
+    char       *string_data;      /* NULL if not a string literal */
+    int         string_len;       /* length (excluding null terminator) */
+    int         is_string;        /* 1 if this is a string literal */
 } IRGlobal;
 
 typedef struct IRModule {

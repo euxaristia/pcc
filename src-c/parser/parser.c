@@ -858,6 +858,83 @@ static ASTNode *parse_declaration(Parser *p) {
         }
     }
 
+    /* Handle enum body declarations: enum [tag] { ... } or enum { ... } */
+    if (current(p)->type == TT_ENUM) {
+        /* Peek ahead: only intercept if followed by optional identifier + '{' */
+        int saved = p->pos;
+        advance(p);
+        int has_brace = 0;
+        if (current(p)->type == TT_LEFT_BRACE) {
+            has_brace = 1;
+        } else if (current(p)->type == TT_IDENTIFIER) {
+            advance(p);
+            if (current(p)->type == TT_LEFT_BRACE) has_brace = 1;
+        }
+        p->pos = saved; /* backtrack */
+
+        if (has_brace) {
+            /* Parse as enum declaration */
+            Token *enum_tok = advance(p); /* consume 'enum' */
+            Token *tag = NULL;
+            if (current(p)->type == TT_IDENTIFIER) tag = advance(p);
+            match(p, TT_LEFT_BRACE); /* consume '{' */
+
+            int cap = 8, nenum = 0;
+            char **enum_names = palloc(p, sizeof(char*) * cap);
+            ASTNode **enum_values = palloc(p, sizeof(ASTNode*) * cap);
+            while (!match(p, TT_RIGHT_BRACE)) {
+                if (current(p)->type == TT_EOF) break;
+                if (current(p)->type != TT_IDENTIFIER) { advance(p); continue; }
+                Token *ename = advance(p);
+                if (nenum >= cap) {
+                    cap *= 2;
+                    enum_names = palloc(p, sizeof(char*) * cap);
+                    enum_values = palloc(p, sizeof(ASTNode*) * cap);
+                }
+                ASTNode *init_expr = NULL;
+                if (match(p, TT_ASSIGN)) {
+                    init_expr = parse_expression(p);
+                }
+                enum_names[nenum] = pstrdup(p, ename->value);
+                enum_values[nenum] = init_expr;
+                nenum++;
+                match(p, TT_COMMA);
+            }
+
+            ASTNode *enum_node = make_node(p, NT_ENUM_DECL, enum_tok->line, enum_tok->column);
+            enum_node->u.enum_decl.name = tag ? pstrdup(p, tag->value) : NULL;
+            enum_node->u.enum_decl.nenum = nenum;
+            enum_node->u.enum_decl.enum_names = palloc(p, sizeof(char*) * nenum);
+            enum_node->u.enum_decl.enum_values = palloc(p, sizeof(ASTNode*) * nenum);
+            for (int i = 0; i < nenum; i++) {
+                enum_node->u.enum_decl.enum_names[i] = enum_names[i];
+                enum_node->u.enum_decl.enum_values[i] = enum_values[i];
+            }
+
+            /* Check if a variable declarator follows: enum { ... } x; */
+            Token *var_name_token = NULL;
+            parse_declarator(p, NULL, &var_name_token);
+            if (var_name_token) {
+                ASTNode *decl = make_node(p, NT_DECLARATION, enum_tok->line, enum_tok->column);
+                decl->u.decl.var_type = palloc(p, sizeof(TypeSpec));
+                decl->u.decl.var_type->type_name = tag ? pstrdup(p, tag->value) : pstrdup(p, "<anonymous>");
+                decl->u.decl.name = pstrdup(p, var_name_token->value);
+                decl->u.decl.storage = storage;
+                if (match(p, TT_ASSIGN)) decl->u.decl.init = parse_expression(p);
+                consume(p, TT_SEMICOLON, "Expected ';' after declaration");
+                ASTNode *block = make_node(p, NT_COMPOUND_STMT, enum_tok->line, enum_tok->column);
+                block->u.compound.stmts = palloc(p, sizeof(ASTNode*) * 2);
+                block->u.compound.stmts[0] = enum_node;
+                block->u.compound.stmts[1] = decl;
+                block->u.compound.nstmts = 2;
+                return block;
+            }
+
+            consume(p, TT_SEMICOLON, "Expected ';' after enum declaration");
+            return enum_node;
+        }
+    }
+
     TypeSpec *base_type = parse_type_specifier(p);
     if (!base_type) return NULL;
 

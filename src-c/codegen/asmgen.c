@@ -330,7 +330,32 @@ static void gen_data(SB *sb, IRModule *mod) {
         IRGlobal *g = mod->globals[i];
         sb_printf(sb, "  .globl %s\n", g->name);
         sb_printf(sb, "  .align 16\n  %s:\n", g->name);
-        if (g->initializer) {
+        if (g->is_string) {
+            sb_printf(sb, "  .string \"");
+            for (int j = 0; j < g->string_len; j++) {
+                unsigned char c = (unsigned char)g->string_data[j];
+                switch (c) {
+                    case '\n': sb_append(sb, "\\n"); break;
+                    case '\t': sb_append(sb, "\\t"); break;
+                    case '\0': sb_append(sb, "\\0"); break;
+                    case '\r': sb_append(sb, "\\r"); break;
+                    case '\\': sb_append(sb, "\\\\"); break;
+                    case '"': sb_append(sb, "\\\""); break;
+                    case '\'': sb_append(sb, "\\'"); break;
+                    default:
+                        if (c >= 32 && c < 127) {
+                            char ch[2] = {(char)c, 0};
+                            sb_append(sb, ch);
+                        } else {
+                            char buf[8];
+                            snprintf(buf, sizeof(buf), "\\x%02x", c);
+                            sb_append(sb, buf);
+                        }
+                        break;
+                }
+            }
+            sb_append(sb, "\"\n");
+        } else if (g->initializer) {
             if (g->type==IR_I32||g->type==IR_F32) sb_printf(sb,"  .long %d\n",(int)g->initializer->value);
             else if (g->type==IR_I8) sb_printf(sb,"  .byte %d\n",(int)g->initializer->value);
             else sb_printf(sb,"  .quad %d\n",(int)g->initializer->value);
