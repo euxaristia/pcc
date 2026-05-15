@@ -116,8 +116,42 @@ static ASTNode *parse_primary(Parser *p) {
         return n;
     }
     if (match(p, TT_STRING)) {
+        /* Handle string literal concatenation: "foo" "bar" */
+        size_t total = strlen(t->value) - 2; /* exclude surrounding quotes */
+        size_t cap = total + 2;
+
+        /* peek ahead for adjacent strings */
+        int saved = p->pos;
+        while (current(p)->type == TT_STRING) {
+            Token *next = advance(p);
+            total += strlen(next->value) - 2;
+            cap = total + 2;
+        }
+        p->pos = saved;
+
+        char *combined = palloc(p, cap);
+        size_t pos = 0;
+        while (current(p)->type == TT_STRING) {
+            Token *st = advance(p);
+            size_t slen = strlen(st->value);
+            if (slen >= 2) {
+                size_t inner = slen - 2;
+                memcpy(combined + pos, st->value + 1, inner);
+                pos += inner;
+            }
+        }
+        combined[pos] = '\0';
+
+        /* Rebuild as a quoted string */
+        size_t final_len = pos + 3;
+        char *quoted = palloc(p, final_len);
+        quoted[0] = '"';
+        memcpy(quoted + 1, combined, pos);
+        quoted[pos + 1] = '"';
+        quoted[pos + 2] = '\0';
+
         ASTNode *n = make_node(p, NT_STRING_LIT, t->line, t->column);
-        n->u.str_lit.value = pstrdup(p, t->value);
+        n->u.str_lit.value = quoted;
         return n;
     }
     if (match(p, TT_CHARACTER)) {
@@ -206,6 +240,50 @@ static ASTNode *parse_postfix(Parser *p) {
 
 static ASTNode *parse_unary(Parser *p) {
     Token *t = current(p);
+    
+    /* Cast expression: (type)expr */
+    if (current(p)->type == TT_LEFT_PAREN) {
+        /* Look ahead to determine if this could be a cast (type)expr */
+        Token *lookahead = peek(p, 1);
+        int could_be_type =
+            lookahead->type == TT_INT || lookahead->type == TT_CHAR ||
+            lookahead->type == TT_VOID || lookahead->type == TT_LONG ||
+            lookahead->type == TT_SHORT || lookahead->type == TT_FLOAT ||
+            lookahead->type == TT_DOUBLE || lookahead->type == TT_BOOL ||
+            lookahead->type == TT_UNSIGNED || lookahead->type == TT_SIGNED ||
+            lookahead->type == TT_CONST || lookahead->type == TT_VOLATILE ||
+            lookahead->type == TT_RESTRICT || lookahead->type == TT_UNDERSCORE_RESTRICT ||
+            lookahead->type == TT_STRUCT || lookahead->type == TT_UNION ||
+            lookahead->type == TT_ENUM ||
+            lookahead->type == TT_IDENTIFIER;
+        
+        if (could_be_type) {
+            int saved = p->pos;
+            advance(p); /* consume '(' */
+            TypeSpec *ts = parse_type_specifier(p);
+            if (ts) {
+                while (match(p, TT_MULTIPLY)) {
+                    ts->is_pointer = 1;
+                    ts->pointer_count++;
+                }
+                if (current(p)->type == TT_RIGHT_PAREN) {
+                    advance(p); /* consume ')' */
+                    ASTNode *operand = parse_unary(p);
+                    if (operand) {
+                        ASTNode *n = make_node(p, NT_CAST_EXPR, t->line, t->column);
+                        n->u.cast.target_type = ts;
+                        n->u.cast.operand = operand;
+                        return n;
+                    }
+                }
+            }
+            /* Not a cast — backtrack to before '(' */
+            p->pos = saved;
+        }
+        /* Fall through to parse_postfix/parse_primary for parenthesized expr */
+        return parse_postfix(p);
+    }
+    
     if (match(p, TT_MINUS) || match(p, TT_NOT) || match(p, TT_TILDE) ||
         match(p, TT_PLUS) || match(p, TT_MULTIPLY) || match(p, TT_BITWISE_AND)) {
         ASTNode *n = make_node(p, NT_UNARY_EXPR, t->line, t->column);
@@ -222,6 +300,7 @@ static ASTNode *parse_unary(Parser *p) {
             if (lookahead->type == TT_INT || lookahead->type == TT_CHAR ||
                 lookahead->type == TT_VOID || lookahead->type == TT_LONG ||
                 lookahead->type == TT_STRUCT || lookahead->type == TT_UNION ||
+                lookahead->type == TT_ENUM ||
                 lookahead->type == TT_IDENTIFIER) {
                 /* try to parse as type */
                 int saved = p->pos;
