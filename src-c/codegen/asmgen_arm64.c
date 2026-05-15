@@ -34,6 +34,7 @@ typedef struct { char *vid; Register reg; int used; } AE;
 typedef struct { AE e[64]; int n; CallingConvention cc; } AA;
 static void aa_init(AA *a, CallingConvention cc) { memset(a,0,sizeof(*a)); a->cc=cc; }
 static Register *aa_alloc(AA *a, const char *id, IRType ty) {
+    if (a->n >= 64) return NULL;
     int isf = ir_is_floating_point_type(ty);
     int n = isf ? a->cc.num_float_caller_save_regs : a->cc.num_caller_save_regs;
     const Register *rs = isf ? a->cc.float_caller_save_regs : a->cc.caller_save_regs;
@@ -55,6 +56,7 @@ typedef struct { char n[128]; int o; int sz; } AS;
 typedef struct { AS s[256]; int num; int tot; int al; } AF;
 static void af_init(AF *f, int a) { memset(f,0,sizeof(*f)); f->al=a; }
 static int af_alloc(AF *f, const char *name, int sz) {
+    if (f->num >= 256) return -1;
     AS *s=&f->s[f->num++]; snprintf(s->n,sizeof(s->n),"%s",name); s->o=f->tot; s->sz=sz;
     f->tot+=sz; if (f->tot%f->al) f->tot+=f->al-(f->tot%f->al); return s->o;
 }
@@ -211,7 +213,7 @@ char *arm64_generate_assembly(IRModule *mod) {
                         aa_free(&a,j->condition->id);
                     } else if (tag==IR_INSTR_CALL) {
                         IRCall *call=instr;
-                        for (int r=0;r<6&&r<cc->num_caller_save_regs;r++)
+                        for (int r=0;r<cc->num_caller_save_regs;r++)
                             sb_p(&body,"  str %s, [sp, #-16]!\n",cc->caller_save_regs[r].name);
                         int ia=0,fa=0;
                         for (int a2=0;a2<call->num_args;a2++) { void *arg=call->args[a2]; IRValue *av=arg;

@@ -59,11 +59,11 @@ static void parse_args(int argc, char **argv, Options *opts) {
             if (i + 1 < argc) opts->output_file = argv[++i];
             else { fprintf(stderr, "Error: -o needs arg\n"); exit(1); }
         } else if (strncmp(arg, "-I", 2) == 0) {
-            if (arg[2]) opts->include_paths[opts->num_include_paths++] = arg + 2;
-            else if (i + 1 < argc) opts->include_paths[opts->num_include_paths++] = argv[++i];
+            const char *ipath = arg[2] ? arg + 2 : (i + 1 < argc ? argv[++i] : NULL);
+            if (ipath) { if (opts->num_include_paths >= 64) { fprintf(stderr, "Error: too many -I paths\n"); exit(1); } opts->include_paths[opts->num_include_paths++] = (char*)ipath; }
         } else if (strncmp(arg, "-D", 2) == 0) {
-            if (arg[2]) opts->defines[opts->num_defines++] = arg + 2;
-            else if (i + 1 < argc) opts->defines[opts->num_defines++] = argv[++i];
+            const char *def = arg[2] ? arg + 2 : (i + 1 < argc ? argv[++i] : NULL);
+            if (def) { if (opts->num_defines >= 64) { fprintf(stderr, "Error: too many -D defines\n"); exit(1); } opts->defines[opts->num_defines++] = (char*)def; }
         } else if (strncmp(arg, "--arch=", 7) == 0) {
             opts->arch = arg + 7;
         } else if (strcmp(arg, "-Werror") == 0) {
@@ -74,6 +74,7 @@ static void parse_args(int argc, char **argv, Options *opts) {
             fprintf(stderr, "Unknown option: %s\n", arg);
             exit(1);
         } else {
+            if (opts->num_source_files >= 64) { fprintf(stderr, "Error: too many input files\n"); exit(1); }
             opts->source_files[opts->num_source_files++] = arg;
         }
     }
@@ -121,11 +122,11 @@ int main(int argc, char **argv) {
             const char *dot = strrchr(base, '.');
             if (!dot) dot = base + strlen(base);
             size_t prefix = dot - base;
+            if (prefix >= sizeof(outname)) prefix = sizeof(outname) - 1;
             memcpy(outname, base, prefix);
-            outname[prefix] = '\0';
-            if (opts.preprocess_only) strcat(outname, ".i");
-            else if (opts.emit_assembly) strcat(outname, ".s");
-            else strcat(outname, ".o");
+            if (opts.preprocess_only) snprintf(outname + prefix, sizeof(outname) - prefix, ".i");
+            else if (opts.emit_assembly) snprintf(outname + prefix, sizeof(outname) - prefix, ".s");
+            else snprintf(outname + prefix, sizeof(outname) - prefix, ".o");
             output_path = outname;
         }
 

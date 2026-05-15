@@ -30,12 +30,17 @@ static void sb_append(SB *sb, const char *s) {
 }
 
 static void sb_printf(SB *sb, const char *fmt, ...) {
-    char buf[4096];
-    va_list ap;
+    va_list ap, ap2;
     va_start(ap, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_copy(ap2, ap);
+    int len = vsnprintf(NULL, 0, fmt, ap2);
+    va_end(ap2);
+    char *buf = malloc((size_t)len + 1);
+    if (!buf) { fprintf(stderr, "OOM\n"); exit(1); }
+    vsnprintf(buf, (size_t)len + 1, fmt, ap);
     va_end(ap);
     sb_append(sb, buf);
+    free(buf);
 }
 
 static char *sb_detach(SB *sb) {
@@ -61,6 +66,7 @@ static void ra_init(RegAlloc *ra, CallingConvention cc) {
 }
 
 static Register *ra_alloc(RegAlloc *ra, const char *id, IRType type) {
+    if (ra->num >= 64) return NULL;
     int isf = ir_is_floating_point_type(type);
     int n = isf ? ra->cc.num_float_caller_save_regs : ra->cc.num_caller_save_regs;
     const Register *rs = isf ? ra->cc.float_caller_save_regs : ra->cc.caller_save_regs;
@@ -106,6 +112,7 @@ typedef struct {
 static void sf_init(StackFrame *sf, int al) { memset(sf, 0, sizeof(*sf)); sf->align = al; }
 
 static int sf_alloc(StackFrame *sf, const char *name, int sz) {
+    if (sf->num >= 256) return -1;
     Slot *s = &sf->slots[sf->num++];
     snprintf(s->name, sizeof(s->name), "%s", name);
     s->offset = sf->total; s->size = sz;
@@ -264,20 +271,24 @@ static void emit_div(SB *sb, IRInstruction *ii, RegAlloc *ra, StackFrame *sf, IR
     if (ir_is_floating_point_type(ii->type)) { emit_bin(sb, "div", ii, ra, sf, fn); return; }
     const char *l = op_str(ii->operands[0], ra, sf, fn);
     const char *r = op_str(ii->operands[1], ra, sf, fn);
-    sb_printf(sb, "  push %%rax\n  push %%rdx\n  mov %s, %%rax\n  cqo\n  idiv %s\n", l, r);
+    sb_printf(sb, "  push %%rax\n  push %%rdx\n  push %%r10\n");
+    sb_printf(sb, "  mov %s, %%rax\n  cqo\n  idiv %s\n", l, r);
+    sb_printf(sb, "  mov %%rax, %%r10\n");
     Register *res = ra_alloc(ra, ii->id, ii->type);
-    if (res) sb_printf(sb, "  mov %%rax, %s\n", res->name);
-    sb_printf(sb, "  pop %%rdx\n  pop %%rax\n");
+    if (res) sb_printf(sb, "  mov %%r10, %s\n", res->name);
+    sb_printf(sb, "  pop %%r10\n  pop %%rdx\n  pop %%rax\n");
 }
 
 static void emit_mod(SB *sb, IRInstruction *ii, RegAlloc *ra, StackFrame *sf, IRFunction *fn) {
     if (ii->num_operands < 2) return;
     const char *l = op_str(ii->operands[0], ra, sf, fn);
     const char *r = op_str(ii->operands[1], ra, sf, fn);
-    sb_printf(sb, "  push %%rax\n  push %%rdx\n  mov %s, %%rax\n  cqo\n  idiv %s\n", l, r);
+    sb_printf(sb, "  push %%rax\n  push %%rdx\n  push %%r10\n");
+    sb_printf(sb, "  mov %s, %%rax\n  cqo\n  idiv %s\n", l, r);
+    sb_printf(sb, "  mov %%rdx, %%r10\n");
     Register *res = ra_alloc(ra, ii->id, ii->type);
-    if (res) sb_printf(sb, "  mov %%rdx, %s\n", res->name);
-    sb_printf(sb, "  pop %%rdx\n  pop %%rax\n");
+    if (res) sb_printf(sb, "  mov %%r10, %s\n", res->name);
+    sb_printf(sb, "  pop %%r10\n  pop %%rdx\n  pop %%rax\n");
 }
 
 static void sel_instr(SB *sb, IRInstruction *ii, RegAlloc *ra, StackFrame *sf, IRFunction *fn) {
@@ -377,6 +388,8 @@ static void gen_func(SB *sb, IRFunction *fn, CallingConvention cc) {
                 IRCall *call = instr;
                 for (int r = 0; r < cc.num_caller_save_regs; r++)
                     sb_printf(&body, "  push %s\n", cc.caller_save_regs[r].name);
+                if (cc.num_caller_save_regs % 2 == 1)
+                    sb_printf(&body, "  sub $8, %%rsp\n");
                 int ia = 0, fa = 0;
                 for (int a = 0; a < call->num_args; a++) {
                     void *arg = call->args[a];
@@ -397,6 +410,8 @@ static void gen_func(SB *sb, IRFunction *fn, CallingConvention cc) {
                     }
                 }
                 sb_printf(&body, "  call %s\n", call->callee);
+                if (cc.num_caller_save_regs % 2 == 1)
+                    sb_printf(&body, "  add $8, %%rsp\n");
                 for (int r = cc.num_caller_save_regs - 1; r >= 0; r--)
                     sb_printf(&body, "  pop %s\n", cc.caller_save_regs[r].name);
                 if (call->type != IR_VOID) {

@@ -183,7 +183,12 @@ unsigned char *generate_elf(AssemblyProgram *prog, const char *arch, size_t *out
     for (int i = 0; i < 7; i++) w8(buf, &off, 0);
 
     w16(buf, &off, 1);  /* ET_REL */
-    w16(buf, &off, 0x3E); /* x86-64 */
+    {
+        unsigned machine = 0x3E; /* EM_X86_64 */
+        if (strcmp(arch, "arm64") == 0 || strcmp(arch, "aarch64") == 0)
+            machine = 0xB7; /* EM_AARCH64 */
+        w16(buf, &off, machine);
+    }
     w32(buf, &off, 1);  /* version */
     w64(buf, &off, 0);  /* entry */
     w64(buf, &off, 0);  /* phoff */
