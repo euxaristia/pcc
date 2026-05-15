@@ -50,6 +50,30 @@ git push
 
 This ensures changes are saved and can be reviewed incrementally.
 
+## Branch Protection
+
+The `main` branch is protected on GitHub:
+- Required PR reviews (dismiss stale reviews enabled)
+- Enforce admins enabled
+- No deletions or force pushes
+
+**If you need to temporarily remove protection** (e.g. to delete the branch during a rename), you **MUST reapply it immediately** after using the same settings. Run:
+
+```bash
+gh api repos/euxaristia/pcc/branches/main/protection -X PUT --input - <<'EOF'
+{
+  "required_status_checks": null,
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "dismiss_stale_reviews": true,
+    "require_code_owner_reviews": false,
+    "required_approving_review_count": 0
+  },
+  "restrictions": null
+}
+EOF
+```
+
 ## Environment Variables
 
 - `PCC_VERBOSE=1` - Enable verbose output
