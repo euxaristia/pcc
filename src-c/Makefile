@@ -22,7 +22,7 @@ BACKEND_OBJS = $(CODEGEN_OBJS) $(SEMANTIC_OBJS) $(PARSER_OBJS) $(LEXER_OBJS) $(P
 
 .PHONY: all clean test
 
-all: pcc test_lexer test_parser test_semantic test_irgen cpp
+all: pcc test_lexer test_parser test_semantic test_irgen test_asmgen test_elf cpp
 
 # Main compiler executable
 pcc: pcc.c $(BACKEND_OBJS)
@@ -48,16 +48,26 @@ cpp: $(PREPROC_OBJS) cpp.c
 test_irgen: codegen/test_irgen.c $(CODEGEN_OBJS) semantic/semantic.o parser/parser.o lexer/lexer.o $(PREPROC_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 
+# x86-64 assembly generator tests
+test_asmgen: codegen/test_asmgen.c $(CODEGEN_OBJS) semantic/semantic.o parser/parser.o lexer/lexer.o $(PREPROC_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^
+
+# ELF generator tests
+test_elf: codegen/test_elf.c $(CODEGEN_OBJS) semantic/semantic.o parser/parser.o lexer/lexer.o $(PREPROC_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^
+
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-test: test_lexer test_parser test_semantic test_irgen
+test: test_lexer test_parser test_semantic test_irgen test_asmgen test_elf
 	./test_lexer
 	./test_parser
 	./test_semantic
 	./test_irgen
+	./test_asmgen
+	./test_elf
 
 clean:
 	rm -f $(PREPROC_OBJS) $(LEXER_OBJS) $(PARSER_OBJS) $(SEMANTIC_OBJS) $(CODEGEN_OBJS)
-	rm -f test_lexer test_parser test_semantic test_irgen cpp pcc
+	rm -f test_lexer test_parser test_semantic test_irgen test_asmgen test_elf cpp pcc
 	rm -f preprocessor/test_pp preprocessor/cpp preprocessor/*.o

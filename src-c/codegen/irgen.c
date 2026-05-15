@@ -847,8 +847,24 @@ static void *process_expression(IRGenerator *gen, ASTNode *expr) {
             return ir_create_constant(atol(val), IR_I64);
         return ir_create_constant(atoi(val), IR_I32);
     }
-    case NT_CHAR_LIT:
-        return ir_create_constant(expr->u.str_lit.value[0], IR_I8);
+    case NT_CHAR_LIT: {
+        unsigned char cval;
+        if (expr->u.str_lit.value[1] == '\\') {
+            switch (expr->u.str_lit.value[2]) {
+                case 'n': cval = 10; break;
+                case 't': cval = 9; break;
+                case '0': cval = 0; break;
+                case 'r': cval = 13; break;
+                case '\\': cval = '\\'; break;
+                case '\'': cval = '\''; break;
+                case '"': cval = '"'; break;
+                default: cval = (unsigned char)expr->u.str_lit.value[2]; break;
+            }
+        } else {
+            cval = (unsigned char)expr->u.str_lit.value[1];
+        }
+        return ir_create_constant(cval, IR_I8);
+    }
     case NT_STRING_LIT: {
         /* Create a global string */
         char *str_name = gen_id(gen);
