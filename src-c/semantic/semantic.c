@@ -511,11 +511,123 @@ void tycheck_free(TypeChecker *tc) {
    Semantic analyzer (AST walker)
    ======================================================================== */
 
+static void declare_builtin_functions(SemanticAnalyzer *sema) {
+    static DataType void_ptr;
+    void_ptr.base_type = BT_VOID;
+    void_ptr.is_pointer = 1;
+    void_ptr.pointer_count = 1;
+    void_ptr.struct_name = NULL;
+
+    DataType *void_ptr_p = &void_ptr;
+    DataType *type_int_p = (DataType*)&TYPE_INT;
+    DataType *type_long_p = (DataType*)&TYPE_LONG;
+
+    {
+        DataType **pts = malloc(2 * sizeof(DataType*));
+        pts[0] = type_long_p; pts[1] = type_long_p;
+        FunctionSig s = {"__builtin_expect", TYPE_LONG, pts, 2};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+    {
+        DataType **pts = malloc(1 * sizeof(DataType*));
+        pts[0] = type_int_p;
+        FunctionSig s = {"__builtin_return_address", void_ptr, pts, 1};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+    {
+        DataType **pts = malloc(1 * sizeof(DataType*));
+        pts[0] = type_int_p;
+        FunctionSig s = {"__builtin_frame_address", void_ptr, pts, 1};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+    {
+        DataType **pts = malloc(3 * sizeof(DataType*));
+        pts[0] = void_ptr_p; pts[1] = type_int_p; pts[2] = type_int_p;
+        FunctionSig s = {"__builtin_prefetch", TYPE_VOID, pts, 3};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+    {
+        FunctionSig s = {"__builtin_trap", TYPE_VOID, NULL, 0};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+    {
+        FunctionSig s = {"__builtin_debugtrap", TYPE_VOID, NULL, 0};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+    {
+        DataType **pts = malloc(3 * sizeof(DataType*));
+        pts[0] = void_ptr_p; pts[1] = void_ptr_p; pts[2] = type_int_p;
+        FunctionSig s = {"__builtin_memcpy", void_ptr, pts, 3};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+    {
+        DataType **pts = malloc(3 * sizeof(DataType*));
+        pts[0] = void_ptr_p; pts[1] = type_int_p; pts[2] = type_int_p;
+        FunctionSig s = {"__builtin_memset", void_ptr, pts, 3};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+    {
+        DataType **pts = malloc(3 * sizeof(DataType*));
+        pts[0] = void_ptr_p; pts[1] = type_int_p; pts[2] = type_int_p;
+        FunctionSig s = {"__builtin_memchr", void_ptr, pts, 3};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+    {
+        DataType **pts = malloc(1 * sizeof(DataType*));
+        pts[0] = void_ptr_p;
+        FunctionSig s = {"__builtin_strlen", TYPE_INT, pts, 1};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+    {
+        DataType **pts = malloc(2 * sizeof(DataType*));
+        pts[0] = void_ptr_p; pts[1] = void_ptr_p;
+        FunctionSig s = {"__builtin_strcmp", TYPE_INT, pts, 2};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+    {
+        DataType **pts = malloc(2 * sizeof(DataType*));
+        pts[0] = void_ptr_p; pts[1] = type_int_p;
+        FunctionSig s = {"__builtin_va_start", TYPE_VOID, pts, 2};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+    {
+        DataType **pts = malloc(1 * sizeof(DataType*));
+        pts[0] = void_ptr_p;
+        FunctionSig s = {"__builtin_va_end", TYPE_VOID, pts, 1};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+    {
+        DataType **pts = malloc(2 * sizeof(DataType*));
+        pts[0] = type_int_p; pts[1] = type_int_p;
+        FunctionSig s = {"__builtin_offsetof", TYPE_INT, pts, 2};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+    {
+        DataType **pts = malloc(1 * sizeof(DataType*));
+        pts[0] = type_int_p;
+        FunctionSig s = {"BIT", TYPE_LONG, pts, 1};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+    {
+        DataType **pts = malloc(2 * sizeof(DataType*));
+        pts[0] = type_int_p; pts[1] = type_int_p;
+        FunctionSig s = {"min", TYPE_INT, pts, 2};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+    {
+        DataType **pts = malloc(2 * sizeof(DataType*));
+        pts[0] = type_int_p; pts[1] = type_int_p;
+        FunctionSig s = {"max", TYPE_INT, pts, 2};
+        tycheck_declare_function(&sema->tycheck, &s);
+    }
+}
+
 void sema_init(SemanticAnalyzer *sema) {
     symtab_init(&sema->symtab);
     errorlist_init(&sema->errors);
     tycheck_init(&sema->tycheck);
     sema->current_function = NULL;
+    declare_builtin_functions(sema);
 }
 
 void sema_free(SemanticAnalyzer *sema) {
