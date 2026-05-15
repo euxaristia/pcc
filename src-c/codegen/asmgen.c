@@ -178,8 +178,8 @@ static void emit_bin(SB *sb, const char *mnem, IRInstruction *ii,
     } else {
         sb_printf(sb, "  mov %s, %s\n", l, res->name);
         if ((strcmp(mnem, "shl")==0||strcmp(mnem, "shr")==0)&&!((IRValue*)ii->operands[1])->is_constant) {
-            sb_printf(sb, "  mov %s, %%cl\n", r);
-            sb_printf(sb, "  %s %%cl, %s\n", mnem, res->name);
+            sb_printf(sb, "  mov %s, cl\n", r);
+            sb_printf(sb, "  %s cl, %s\n", mnem, res->name);
         } else {
             sb_printf(sb, "  %s %s, %s\n", mnem, r, res->name);
         }
@@ -271,24 +271,24 @@ static void emit_div(SB *sb, IRInstruction *ii, RegAlloc *ra, StackFrame *sf, IR
     if (ir_is_floating_point_type(ii->type)) { emit_bin(sb, "div", ii, ra, sf, fn); return; }
     const char *l = op_str(ii->operands[0], ra, sf, fn);
     const char *r = op_str(ii->operands[1], ra, sf, fn);
-    sb_printf(sb, "  push %%rax\n  push %%rdx\n  push %%r10\n");
-    sb_printf(sb, "  mov %s, %%rax\n  cqo\n  idiv %s\n", l, r);
-    sb_printf(sb, "  mov %%rax, %%r10\n");
+    sb_printf(sb, "  push rax\n  push rdx\n  push r10\n");
+    sb_printf(sb, "  mov %s, rax\n  cqo\n  idiv %s\n", l, r);
+    sb_printf(sb, "  mov rax, r10\n");
     Register *res = ra_alloc(ra, ii->id, ii->type);
-    if (res) sb_printf(sb, "  mov %%r10, %s\n", res->name);
-    sb_printf(sb, "  pop %%r10\n  pop %%rdx\n  pop %%rax\n");
+    if (res) sb_printf(sb, "  mov r10, %s\n", res->name);
+    sb_printf(sb, "  pop r10\n  pop rdx\n  pop rax\n");
 }
 
 static void emit_mod(SB *sb, IRInstruction *ii, RegAlloc *ra, StackFrame *sf, IRFunction *fn) {
     if (ii->num_operands < 2) return;
     const char *l = op_str(ii->operands[0], ra, sf, fn);
     const char *r = op_str(ii->operands[1], ra, sf, fn);
-    sb_printf(sb, "  push %%rax\n  push %%rdx\n  push %%r10\n");
-    sb_printf(sb, "  mov %s, %%rax\n  cqo\n  idiv %s\n", l, r);
-    sb_printf(sb, "  mov %%rdx, %%r10\n");
+    sb_printf(sb, "  push rax\n  push rdx\n  push r10\n");
+    sb_printf(sb, "  mov %s, rax\n  cqo\n  idiv %s\n", l, r);
+    sb_printf(sb, "  mov rdx, r10\n");
     Register *res = ra_alloc(ra, ii->id, ii->type);
-    if (res) sb_printf(sb, "  mov %%r10, %s\n", res->name);
-    sb_printf(sb, "  pop %%r10\n  pop %%rdx\n  pop %%rax\n");
+    if (res) sb_printf(sb, "  mov r10, %s\n", res->name);
+    sb_printf(sb, "  pop r10\n  pop rdx\n  pop rax\n");
 }
 
 static void sel_instr(SB *sb, IRInstruction *ii, RegAlloc *ra, StackFrame *sf, IRFunction *fn) {
@@ -382,14 +382,14 @@ static void gen_func(SB *sb, IRFunction *fn, CallingConvention cc) {
             } else if (tag == IR_INSTR_JUMP_IF) {
                 IRJumpIf *j = instr;
                 const char *cl = val_loc(&ra, &sf, fn, j->condition->id);
-                sb_printf(&body, "  cmp %s, $0\n  jne %s\n  jmp %s\n", cl, j->true_target, j->false_target);
+                sb_printf(&body, "  cmp $0, %s\n  jne %s\n  jmp %s\n", cl, j->true_target, j->false_target);
                 ra_free(&ra, j->condition->id);
             } else if (tag == IR_INSTR_CALL) {
                 IRCall *call = instr;
                 for (int r = 0; r < cc.num_caller_save_regs; r++)
                     sb_printf(&body, "  push %s\n", cc.caller_save_regs[r].name);
                 if (cc.num_caller_save_regs % 2 == 1)
-                    sb_printf(&body, "  sub $8, %%rsp\n");
+                    sb_printf(&body, "  sub $8, rsp\n");
                 int ia = 0, fa = 0;
                 for (int a = 0; a < call->num_args; a++) {
                     void *arg = call->args[a];
@@ -404,14 +404,14 @@ static void gen_func(SB *sb, IRFunction *fn, CallingConvention cc) {
                     } else {
                         if (ia < cc.num_arg_regs) {
                             const char *loc = av->is_constant ? op_str(arg,&ra,&sf,fn) : val_loc(&ra,&sf,fn,av->id);
-                            sb_printf(&body, "  mov %s, %s\n", cc.arg_regs[ia].name, loc);
+                            sb_printf(&body, "  mov %s, %s\n", loc, cc.arg_regs[ia].name);
                             ia++;
                         }
                     }
                 }
                 sb_printf(&body, "  call %s\n", call->callee);
                 if (cc.num_caller_save_regs % 2 == 1)
-                    sb_printf(&body, "  add $8, %%rsp\n");
+                    sb_printf(&body, "  add $8, rsp\n");
                 for (int r = cc.num_caller_save_regs - 1; r >= 0; r--)
                     sb_printf(&body, "  pop %s\n", cc.caller_save_regs[r].name);
                 if (call->type != IR_VOID) {
@@ -435,16 +435,16 @@ static void gen_func(SB *sb, IRFunction *fn, CallingConvention cc) {
                     } else {
                         IRConstant *rc = (IRConstant*)ret->value;
                         const Register *rr = ir_is_floating_point_type(rc->type) ? &cc.float_ret_reg : &cc.ret_reg;
-                        sb_printf(&body, "  mov %s, $%d\n", rr->name, (int)rc->value);
+                        sb_printf(&body, "  mov $%d, %s\n", (int)rc->value, rr->name);
                     }
                 }
-                sb_printf(&body, "  add rsp, %d\n  pop rbp\n  ret\n", sf.total);
+                sb_printf(&body, "  add $%d, rsp\n  pop rbp\n  ret\n", sf.total);
             }
         }
     }
 
-    sb_printf(sb, "  push rbp\n  mov rbp, rsp\n");
-    if (sf.total > 0) sb_printf(sb, "  sub rsp, %d\n", sf.total);
+    sb_printf(sb, "  push rbp\n  mov rsp, rbp\n");
+    if (sf.total > 0) sb_printf(sb, "  sub $%d, rsp\n", sf.total);
     sb_printf(sb, "%s", body.data);
     sb_free(&body);
     ra_free_all(&ra);
