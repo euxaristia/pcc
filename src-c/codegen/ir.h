@@ -75,6 +75,7 @@ typedef struct IRJumpIf {
 typedef struct IRCall {
     IRInstrType tag;
     char       *callee;
+    char       *result_id;
     IRType      type;
     int         num_args;
     void      **args;  /* IRValue* or IRConstant* */

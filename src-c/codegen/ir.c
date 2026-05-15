@@ -123,6 +123,7 @@ IRCall *ir_create_call(const char *callee, IRType type) {
     IRCall *c = calloc(1, sizeof(IRCall));
     c->tag = IR_INSTR_CALL;
     c->callee = strdup(callee);
+    c->result_id = NULL;
     c->type = type;
     c->num_args = 0;
     c->args = NULL;
@@ -200,7 +201,7 @@ void ir_module_free(IRModule *mod) {
                     free(ji->true_target); free(ji->false_target); free(ji);
                 } else if (tag == IR_INSTR_CALL) {
                     IRCall *cc = instr;
-                    free(cc->callee); free(cc->args); free(cc);
+                    free(cc->callee); free(cc->result_id); free(cc->args); free(cc);
                 } else if (tag == IR_INSTR_RET) {
                     free(instr);
                 }

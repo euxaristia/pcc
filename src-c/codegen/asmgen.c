@@ -422,7 +422,8 @@ static void gen_func(SB *sb, IRFunction *fn, CallingConvention cc) {
                     sb_printf(&body, "  pop %s\n", cc.caller_save_regs[r].name);
                 }
                 if (call->type != IR_VOID) {
-                    Register *res = ra_alloc(&ra, call->callee, call->type);
+                    const char *rid = call->result_id ? call->result_id : call->callee;
+                    Register *res = ra_alloc(&ra, rid, call->type);
                     const Register *rr = ir_is_floating_point_type(call->type) ? &cc.float_ret_reg : &cc.ret_reg;
                     if (res && strcmp(res->name, rr->name) != 0) {
                         const char *mov = ir_is_floating_point_type(call->type) ? (call->type==IR_F32?"movss":"movsd") : "mov";

@@ -730,7 +730,9 @@ static void *process_function_call(IRGenerator *gen, ASTNode *call) {
     }
     ir_block_add_instr(gen->current_block, call_instr);
     
-    return ir_create_value(gen_id(gen), IR_I32);
+    IRValue *call_result = ir_create_value(gen_id(gen), IR_I32);
+    call_instr->result_id = strdup(call_result->id);
+    return call_result;
 }
 
 static void *process_identifier(IRGenerator *gen, ASTNode *expr) {
