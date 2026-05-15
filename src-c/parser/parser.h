@@ -268,6 +268,7 @@ typedef struct {
     Token **tokens;
     int     count;
     int     pos;
+    int     error;
     void   *arena;  /* Arena* for allocations */
 } Parser;
 

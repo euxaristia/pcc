@@ -30,6 +30,7 @@ void parser_init(Parser *p, Token **tokens, int count) {
     p->tokens = tokens;
     p->count  = count;
     p->pos    = 0;
+    p->error  = 0;
     p->arena  = NULL;
 }
 
@@ -60,6 +61,7 @@ static int match(Parser *p, TokenType type) {
 
 static Token *consume(Parser *p, TokenType type, const char *msg) {
     if (current(p)->type == type) return advance(p);
+    p->error = 1;
     fprintf(stderr, "Parse error at line %d: %s (got %s '%s')\n",
             current(p)->line, msg, token_type_name(current(p)->type), current(p)->value);
     return NULL;

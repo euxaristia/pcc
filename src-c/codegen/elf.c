@@ -29,6 +29,13 @@ typedef struct {
     unsigned long size;
 } SymEntry;
 
+typedef struct {
+    int    offset;
+    char   name[128];
+    int    addend;
+} Reloc;
+#define MAX_RELOCS 512
+
 AssemblyProgram *parse_assembly(const char *assembly) {
     AssemblyProgram *prog = calloc(1, sizeof(AssemblyProgram));
     if (!prog) return NULL;
@@ -484,7 +491,7 @@ static void free_tokens(char **parts, int np) {
 typedef struct { const char *name; int opcode_op; int cc; int op_ext; } OpEntry;
 
 /* Encode one assembly line into bytes. Returns bytes written, or <0 for label, or 0 for skip/directive. */
-static int encode_instruction(unsigned char *buf, const char *line) {
+static int encode_instruction(unsigned char *buf, const char *line, int cur_offset, Reloc *relocs, int *nreloc) {
     char *parts[8];
     int np = tokenize(line, parts, 8);
     if (np == 0) { free_tokens(parts, np); return 0; }
@@ -519,6 +526,28 @@ static int encode_instruction(unsigned char *buf, const char *line) {
             result = enc_binary_reg_reg(buf, 0x89, parts[1], parts[2]);
         }
         if (result > 0) { free_tokens(parts, np); return result; }
+
+        /* mov label, reg — RIP-relative load of global/static symbol */
+        {
+            int dr = reg_index(parts[2]);
+            if (dr >= 0 && parts[1][0] != '$' && parts[1][0] != '[' && parts[1][0] != '(' && reg_index(parts[1]) < 0) {
+                int pos = 0;
+                int rex_r = is_ext_reg(parts[2]) ? 1 : 0;
+                pos += emit_rex(buf + pos, 1, rex_r, 0, 0);
+                buf[pos++] = 0x8B;                    /* MOV r64, r/m64 */
+                buf[pos++] = modrm(0, dr, 5);          /* RIP-relative: mod=00, reg=dr, rm=101 */
+                buf[pos++] = 0; buf[pos++] = 0; buf[pos++] = 0; buf[pos++] = 0;  /* disp32 placeholder */
+                if (relocs && nreloc && *nreloc < MAX_RELOCS) {
+                    relocs[*nreloc].offset = cur_offset + pos - 4;
+                    strncpy(relocs[*nreloc].name, parts[1], 127);
+                    relocs[*nreloc].name[127] = '\0';
+                    relocs[*nreloc].addend = -4;
+                    (*nreloc)++;
+                }
+                free_tokens(parts, np);
+                return pos;
+            }
+        }
     }
 
     /* add/sub/and/or/xor src, dst — 0x01/0x29/0x21/0x09/0x31 */
@@ -545,6 +574,29 @@ static int encode_instruction(unsigned char *buf, const char *line) {
         if (strcmp(op, "imul") == 0 && np >= 3) {
             int dr = reg_index(parts[2]);
             if (dr >= 0) {
+                if (parts[1][0] == '$') {
+                    int imm = atoi(parts[1] + 1);
+                    int pos = 0;
+                    int rex_r = is_ext_reg(parts[2]) ? 1 : 0;
+                    int rex_b = 0;
+                    pos += emit_rex(buf + pos, 1, rex_r, 0, rex_b);
+                    if (imm >= -128 && imm <= 127) {
+                        buf[pos++] = 0x6B;
+                    } else {
+                        buf[pos++] = 0x69;
+                    }
+                    buf[pos++] = modrm(3, dr, dr);
+                    if (imm >= -128 && imm <= 127) {
+                        buf[pos++] = imm & 0xFF;
+                    } else {
+                        buf[pos++] = imm & 0xFF;
+                        buf[pos++] = (imm >> 8) & 0xFF;
+                        buf[pos++] = (imm >> 16) & 0xFF;
+                        buf[pos++] = (imm >> 24) & 0xFF;
+                    }
+                    free_tokens(parts, np);
+                    return pos;
+                }
                 int sr = reg_index(parts[1]);
                 if (sr >= 0) {
                     int pos = 0;
@@ -561,10 +613,10 @@ static int encode_instruction(unsigned char *buf, const char *line) {
         }
     }
 
-    /* cmp src, dst (or cmp dst, $imm) */
+    /* cmp src, dst — AT&T: cmp $imm, reg or cmp reg, reg */
     if (strcmp(op, "cmp") == 0 && np >= 3) {
-        if (parts[2][0] == '$') {
-            result = enc_cmp_imm(buf, parts[1], atoi(parts[2] + 1));
+        if (parts[1][0] == '$') {
+            result = enc_cmp_imm(buf, parts[2], atoi(parts[1] + 1));
         } else {
             result = enc_cmp_reg(buf, parts[1], parts[2]);
         }
@@ -704,7 +756,8 @@ typedef struct {
    gets its target looked up in the labels table. We need two passes.
    If syms is non-NULL, collect symbol entries for .globl'd labels. */
 static unsigned char *encode_text_section(const char *content, size_t *out_len,
-                                          SymEntry *syms, int *nsym, int text_shndx) {
+                                          SymEntry *syms, int *nsym, int text_shndx,
+                                          Reloc *relocs, int *nreloc) {
     Label labels[512];
     int num_labels = 0;
     int globl_next[512]; /* names that are preceded by .globl */
@@ -801,7 +854,7 @@ static unsigned char *encode_text_section(const char *content, size_t *out_len,
 
         /* Encode the instruction */
         unsigned char enc[MAX_INSTR_ENCODED];
-        int ret = encode_instruction(enc, line);
+        int ret = encode_instruction(enc, line, (int)off, relocs, nreloc);
 
         if (ret > 0) {
             /* Normal instruction */
@@ -957,6 +1010,8 @@ unsigned char *generate_elf(AssemblyProgram *prog, const char *arch, size_t *out
     /* Collect symbols */
     SymEntry syms[MAX_SYMS];
     int nsym = 0;
+    Reloc relocs[MAX_RELOCS];
+    int nreloc = 0;
 
     /* Encode text section (x86-64 only; ARM64 uses raw text for now) */
     int is_x86_64 = (strcmp(arch, "x86-64") == 0 || strcmp(arch, "x86_64") == 0);
@@ -964,7 +1019,7 @@ unsigned char *generate_elf(AssemblyProgram *prog, const char *arch, size_t *out
         for (int i = 0; i < 3 && i < prog->num_sections; i++) {
             if (strcmp(prog->sections[i].name, ".text") == 0) {
                 if (is_x86_64) {
-                    text_data = encode_text_section(prog->sections[i].content, &text_sz, syms, &nsym, 1);
+                    text_data = encode_text_section(prog->sections[i].content, &text_sz, syms, &nsym, 1, relocs, &nreloc);
                 } else {
                     text_sz = strlen(prog->sections[i].content);
                     /* Collect text symbols from raw assembly */
@@ -1132,8 +1187,10 @@ unsigned char *generate_elf(AssemblyProgram *prog, const char *arch, size_t *out
     if (has_text) { sec_text = si; si++; }
     if (has_data) { sec_data = si; si++; }
     if (has_bss)  { si++; }
+    int sec_symtab = si;
     si++; /* .symtab */
     sec_strtab   = si++;
+    if (nreloc > 0) { si++; }
     si++; /* .shstrtab */
     int nsec = si; /* total section count */
 
@@ -1247,13 +1304,30 @@ unsigned char *generate_elf(AssemblyProgram *prog, const char *arch, size_t *out
     off += stro;
     size_t strtab_sz = stro;
 
+    /* .rela.text data */
+    size_t rela_text_file_off = 0, rela_text_sz = 0;
+    if (nreloc > 0) {
+        rela_text_file_off = off;
+        for (int i = 0; i < nreloc; i++) {
+            int sym_idx = 0;
+            for (int j = 0; j < nsym; j++) {
+                if (strcmp(syms[j].name, relocs[i].name) == 0) { sym_idx = j + 1; break; }
+            }
+            w64(buf, &off, (unsigned long)relocs[i].offset);       /* r_offset */
+            unsigned long info = ((unsigned long)sym_idx << 32) | 2; /* R_X86_64_PC32 */
+            w64(buf, &off, info);                                   /* r_info */
+            w64(buf, &off, (unsigned long)relocs[i].addend);        /* r_addend */
+        }
+        rela_text_sz = off - rela_text_file_off;
+    }
+
     shoff = off;
 
     /* Build section header string table (.shstrtab content) */
     char sht[128];
     size_t sho = 0;
     int name_off_text = -1, name_off_data = -1, name_off_bss = -1;
-    int name_off_symtab = -1, name_off_strtab = -1, name_off_shstrtab = -1;
+    int name_off_symtab = -1, name_off_strtab = -1, name_off_shstrtab = -1, name_off_rela_text = -1;
 
     sht[sho++] = '\0';
     if (has_text) { name_off_text = sho; memcpy(sht+sho,".text",5); sho+=5; sht[sho++]='\0'; }
@@ -1261,6 +1335,7 @@ unsigned char *generate_elf(AssemblyProgram *prog, const char *arch, size_t *out
     if (has_bss)  { name_off_bss  = sho; memcpy(sht+sho,".bss",4);  sho+=4; sht[sho++]='\0'; }
     name_off_symtab  = sho; memcpy(sht+sho,".symtab",7);  sho+=7; sht[sho++]='\0';
     name_off_strtab  = sho; memcpy(sht+sho,".strtab",7);  sho+=7; sht[sho++]='\0';
+    if (nreloc > 0) { name_off_rela_text = sho; memcpy(sht+sho,".rela.text",10); sho+=10; sht[sho++]='\0'; }
     name_off_shstrtab = sho; memcpy(sht+sho,".shstrtab",9); sho+=9; sht[sho++]='\0';
 
     size_t sht_sz = sho;
@@ -1330,6 +1405,21 @@ unsigned char *generate_elf(AssemblyProgram *prog, const char *arch, size_t *out
     w32(buf, &off, 0); w32(buf, &off, 0);
     w64(buf, &off, 1); w64(buf, &off, 0);
     sec_idx++;
+
+    /* .rela.text */
+    if (nreloc > 0) {
+        w32(buf, &off, name_off_rela_text);
+        w32(buf, &off, 4); /* SHT_RELA */
+        w64(buf, &off, 0); /* flags */
+        w64(buf, &off, 0); /* addr */
+        w64(buf, &off, rela_text_file_off);
+        w64(buf, &off, rela_text_sz);
+        w32(buf, &off, sec_symtab); /* sh_link = symtab section index */
+        w32(buf, &off, sec_text);   /* sh_info = text section index */
+        w64(buf, &off, 8);          /* sh_addralign */
+        w64(buf, &off, 24);         /* sh_entsize = sizeof(Elf64_Rela) */
+        sec_idx++;
+    }
 
     /* .shstrtab */
     w32(buf, &off, name_off_shstrtab);

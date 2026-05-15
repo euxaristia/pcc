@@ -195,20 +195,21 @@ static void emit_cmp(SB *sb, const char *setcc, IRInstruction *ii,
     (void)l;
     if (isf) {
         const char *cmp = ((IRValue*)ii->operands[0])->type==IR_F32?"ucomiss":"ucomisd";
-        sb_printf(sb, "  %s %s, %s\n", cmp, r, l);
         Register *res = ra_alloc(ra, ii->id, ii->type);
         if (!res) return;
         sb_printf(sb, "  xor %s, %s\n", res->name, res->name);
+        sb_printf(sb, "  %s %s, %s\n", cmp, r, l);
         if (strcmp(setcc,"setl")==0) setcc="setb";
         else if (strcmp(setcc,"setle")==0) setcc="setbe";
         else if (strcmp(setcc,"setg")==0) setcc="seta";
         else if (strcmp(setcc,"setge")==0) setcc="setae";
         sb_printf(sb, "  %s %s\n", setcc, res->name);
     } else {
-        sb_printf(sb, "  cmp %s, %s\n", r, l);
         Register *res = ra_alloc(ra, ii->id, ii->type);
         if (!res) return;
         sb_printf(sb, "  xor %s, %s\n", res->name, res->name);
+        sb_printf(sb, "  mov %s, %s\n", l, res->name);
+        sb_printf(sb, "  cmp %s, %s\n", r, res->name);
         sb_printf(sb, "  %s %s\n", setcc, res->name);
     }
 }

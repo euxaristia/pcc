@@ -19,3 +19,6 @@ bun.lockb
 .env
 examples/large_test.c
 pcc
+src-c/pcc
+src-c/test_*
+!src-c/test_*.c

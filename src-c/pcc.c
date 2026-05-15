@@ -175,6 +175,13 @@ int main(int argc, char **argv) {
         Parser parser;
         parser_init(&parser, tokens, num_tokens);
         ASTNode *ast = parser_parse(&parser);
+        if (parser.error) {
+            fprintf(stderr, "Parse errors encountered. Aborting.\n");
+            tokens_free(tokens, num_tokens);
+            ast_free(ast);
+            pp_result_free(preprocessed);
+            return 1;
+        }
         if (opts.verbose) fprintf(stderr, "Parsed AST\n");
 
         /* Phase 3: Semantic Analysis */
@@ -184,17 +191,15 @@ int main(int argc, char **argv) {
         sema_analyze(&sema, ast);
 
         if (sema.errors.len > 0) {
-            fprintf(stderr, "Semantic %s:\n", opts.werror ? "errors" : "warnings");
+            fprintf(stderr, "Semantic errors:\n");
             for (size_t i = 0; i < sema.errors.len; i++) {
                 fprintf(stderr, "  %zu. %s (line %d, col %d)\n",
                         i + 1, sema.errors.errors[i]->message,
                         sema.errors.errors[i]->line, sema.errors.errors[i]->column);
             }
-            if (opts.werror) {
-                fprintf(stderr, "Compilation aborted due to errors\n");
-                sema_free(&sema);
-                return 1;
-            }
+            fprintf(stderr, "Compilation aborted due to errors\n");
+            sema_free(&sema);
+            return 1;
         }
 
         /* Phase 4: IR Generation */
