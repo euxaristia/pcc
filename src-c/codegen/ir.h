@@ -142,6 +142,7 @@ const char *ir_type_name(IRType type);
 int ir_type_size(IRType type);
 int ir_is_pointer_type(IRType type);
 int ir_is_integer_type(IRType type);
+int ir_is_floating_point_type(IRType type);
 
 IRValue    *ir_create_value(const char *id, IRType type);
 IRConstant *ir_create_constant(double value, IRType type);

@@ -3,4 +3,7 @@ test_pp
 cpp
 test_lexer
 test_parser
+test_semantic
+test_irgen
+pcc
 

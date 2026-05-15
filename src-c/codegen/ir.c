@@ -74,6 +74,7 @@ int ir_type_size(IRType type) {
 
 int ir_is_pointer_type(IRType type) { return type == IR_PTR; }
 int ir_is_integer_type(IRType type) { return type == IR_I8 || type == IR_I16 || type == IR_I32 || type == IR_I64; }
+int ir_is_floating_point_type(IRType type) { return type == IR_F32 || type == IR_F64; }
 
 IRValue *ir_create_value(const char *id, IRType type) {
     IRValue *v = calloc(1, sizeof(IRValue));
