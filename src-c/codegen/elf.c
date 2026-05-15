@@ -249,13 +249,23 @@ static int enc_mov_reg_to_rm(unsigned char *buf, const char *src, const char *ds
 
 /* Encode MOV with immediate: mov $imm, dst */
 static int enc_mov_imm(unsigned char *buf, int imm, const char *dst) {
-    int dr = reg_index(dst);
-    if (dr < 0) return 0;
     int pos = 0;
-    int ext = is_ext_reg(dst) ? 1 : 0;
-    pos += emit_rex(buf + pos, 1, 0, 0, ext);
-    buf[pos++] = 0xC7;
-    buf[pos++] = modrm(3, 0, dr);
+    int mod_val, rm, disp, rex_b;
+    if (parse_mem(dst, &mod_val, &rm, &disp, &rex_b)) {
+        pos += emit_rex(buf + pos, 1, 0, 0, rex_b);
+        buf[pos++] = 0xC7;
+        buf[pos++] = modrm(mod_val, 0, rm);
+        if (mod_val == 1) buf[pos++] = disp & 0xFF;
+        else if (mod_val == 2) { buf[pos++] = disp & 0xFF; buf[pos++] = (disp>>8)&0xFF; buf[pos++] = (disp>>16)&0xFF; buf[pos++] = (disp>>24)&0xFF; }
+        else if (mod_val == 0 && rm == 5) { buf[pos++] = 0; buf[pos++] = 0; buf[pos++] = 0; buf[pos++] = 0; }
+    } else {
+        int dr = reg_index(dst);
+        if (dr < 0) return 0;
+        int ext = is_ext_reg(dst) ? 1 : 0;
+        pos += emit_rex(buf + pos, 1, 0, 0, ext);
+        buf[pos++] = 0xC7;
+        buf[pos++] = modrm(3, 0, dr);
+    }
     buf[pos++] = imm & 0xFF;
     buf[pos++] = (imm >> 8) & 0xFF;
     buf[pos++] = (imm >> 16) & 0xFF;

@@ -375,7 +375,6 @@ static void gen_func(SB *sb, IRFunction *fn, CallingConvention cc) {
                         if (v->id[0]=='t'||strncmp(v->id,"callee",6)==0) ra_free(&ra, v->id);
                     }
                 }
-                if (ii->opcode != IR_OP_LOAD) ra_free(&ra, ii->id);
 
             } else if (tag == IR_INSTR_JUMP) {
                 sb_printf(&body, "  jmp %s\n", ((IRJump*)instr)->target);
@@ -386,9 +385,14 @@ static void gen_func(SB *sb, IRFunction *fn, CallingConvention cc) {
                 ra_free(&ra, j->condition->id);
             } else if (tag == IR_INSTR_CALL) {
                 IRCall *call = instr;
-                for (int r = 0; r < cc.num_caller_save_regs; r++)
+                int push_count = 0;
+                for (int r = 0; r < cc.num_caller_save_regs; r++) {
+                    if (strcmp(cc.caller_save_regs[r].name, cc.ret_reg.name) == 0) continue;
+                    if (ir_is_floating_point_type(call->type) && strcmp(cc.caller_save_regs[r].name, cc.float_ret_reg.name) == 0) continue;
                     sb_printf(&body, "  push %s\n", cc.caller_save_regs[r].name);
-                if (cc.num_caller_save_regs % 2 == 1)
+                    push_count++;
+                }
+                if (push_count % 2 == 1)
                     sb_printf(&body, "  sub $8, rsp\n");
                 int ia = 0, fa = 0;
                 for (int a = 0; a < call->num_args; a++) {
@@ -410,10 +414,13 @@ static void gen_func(SB *sb, IRFunction *fn, CallingConvention cc) {
                     }
                 }
                 sb_printf(&body, "  call %s\n", call->callee);
-                if (cc.num_caller_save_regs % 2 == 1)
+                if (push_count % 2 == 1)
                     sb_printf(&body, "  add $8, rsp\n");
-                for (int r = cc.num_caller_save_regs - 1; r >= 0; r--)
+                for (int r = cc.num_caller_save_regs - 1; r >= 0; r--) {
+                    if (strcmp(cc.caller_save_regs[r].name, cc.ret_reg.name) == 0) continue;
+                    if (ir_is_floating_point_type(call->type) && strcmp(cc.caller_save_regs[r].name, cc.float_ret_reg.name) == 0) continue;
                     sb_printf(&body, "  pop %s\n", cc.caller_save_regs[r].name);
+                }
                 if (call->type != IR_VOID) {
                     Register *res = ra_alloc(&ra, call->callee, call->type);
                     const Register *rr = ir_is_floating_point_type(call->type) ? &cc.float_ret_reg : &cc.ret_reg;
