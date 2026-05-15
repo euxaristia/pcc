@@ -1021,9 +1021,10 @@ static ASTNode *parse_parameters(Parser *p) {
             /* varargs */
             break;
         }
-        TypeSpec *ts = parse_type_specifier(p);
+        TypeSpec *base_ts = parse_type_specifier(p);
+        if (!base_ts) break;
         Token *name = NULL;
-        if (current(p)->type == TT_IDENTIFIER) name = advance(p);
+        TypeSpec *ts = parse_declarator(p, base_ts, &name);
         ASTNode *param = make_node(p, NT_PARAMETER, t->line, t->column);
         param->u.param.var_type = ts;
         param->u.param.name = name ? pstrdup(p, name->value) : NULL;
