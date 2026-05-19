@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFile, writeFile as fsWriteFile } from 'fs/promises';
+import { readFile, writeFile as fsWriteFile, chmod as fsChmod } from 'fs/promises';
 import { Lexer } from './lexer/Lexer';
 import { Parser } from './parser/Parser';
 import { SemanticAnalyzer } from './semantic/SemanticAnalyzer';
@@ -8,6 +8,7 @@ import { IRGenerator } from './codegen/IRGenerator';
 import { generateX8664Assembly } from './codegen/AssemblyGenerator';
 import { generateARM64Assembly } from './codegen/ARM64AssemblyGenerator';
 import { generateELFObjectFile } from './codegen/ELFGenerator';
+import { linkObjectFiles } from './codegen/Linker';
 import { prettyPrintIR } from './codegen/IR';
 import { Preprocessor, PreprocessorOptions } from './preprocessor/Preprocessor';
 import { getCallingConvention } from './codegen/TargetArchitecture';
@@ -296,16 +297,28 @@ async function compileFile(sourceFile: string, options: CompilerOptions) {
     console.log(`\n=== Source Code ===\n${sourceCode}`);
   }
 
-  // Determine output path
-  let outputPath: string;
-  if (options.outputFile && options.sourceFiles.length === 1) {
-    outputPath = options.outputFile;
+  // Determine output paths
+  let objOutputPath: string;
+  let linkOutputPath: string | undefined;
+
+  if (options.compileOnly) {
+    // -c: produce .o file only
+    if (options.outputFile && options.sourceFiles.length === 1) {
+      objOutputPath = options.outputFile;
+    } else {
+      objOutputPath = sourceFile.replace(/\.c$/, '.o');
+    }
+    linkOutputPath = undefined;
   } else if (options.preprocessOnly) {
-    outputPath = sourceFile.replace(/\.c$/, '.i');
+    objOutputPath = options.outputFile || sourceFile.replace(/\.c$/, '.i');
+    linkOutputPath = undefined;
   } else if (options.emitAssembly) {
-    outputPath = sourceFile.replace(/\.c$/, '.s');
+    objOutputPath = options.outputFile || sourceFile.replace(/\.c$/, '.s');
+    linkOutputPath = undefined;
   } else {
-    outputPath = sourceFile.replace(/\.c$/, '.o');
+    // Linking: produce .o then link to executable
+    objOutputPath = sourceFile.replace(/\.c$/, '.o');
+    linkOutputPath = options.outputFile || 'a.out';
   }
 
   // Note: multiple source files with -o is rejected in main() before reaching here
@@ -344,8 +357,8 @@ async function compileFile(sourceFile: string, options: CompilerOptions) {
     if (options.outputFile === '-') {
       process.stdout.write(preprocessedCode + '\n');
     } else {
-      await fsWriteFile(outputPath, preprocessedCode);
-      if (options.verbose) console.log(`Preprocessed output written to ${outputPath}`);
+      await fsWriteFile(objOutputPath, preprocessedCode);
+      if (options.verbose) console.log(`Preprocessed output written to ${objOutputPath}`);
     }
     return;
   }
@@ -405,8 +418,8 @@ async function compileFile(sourceFile: string, options: CompilerOptions) {
   if (options.verbose) console.log(`Assembly:\n${assembly}`);
 
   if (options.emitAssembly) {
-    await fsWriteFile(outputPath, assembly);
-    if (options.verbose) console.log(`Assembly written to ${outputPath}`);
+    await fsWriteFile(objOutputPath, assembly);
+    if (options.verbose) console.log(`Assembly written to ${objOutputPath}`);
     return;
   }
 
@@ -420,10 +433,10 @@ async function compileFile(sourceFile: string, options: CompilerOptions) {
   const elf = generateELFObjectFile(assemblyProgram, options.arch);
 
   // Write ELF file
-  await fsWriteFile(outputPath, elf);
+  await fsWriteFile(objOutputPath, elf);
 
   if (options.verbose) {
-    console.log(`Successfully compiled to ${outputPath}`);
+    console.log(`Object file written to ${objOutputPath}`);
     console.log(`ELF file size: ${elf.length} bytes`);
     console.log(`\n=== ELF Header Info ===`);
     console.log(`Magic: ${Array.from(elf.slice(0, 4)).map(b => String.fromCharCode(b)).join('')}`);
@@ -431,9 +444,17 @@ async function compileFile(sourceFile: string, options: CompilerOptions) {
     console.log(`Endianness: ${elf[5] === 1 ? 'Little' : 'Big'}`);
     console.log(`Machine: ${getMachineName(options.arch)}`);
     console.log(`Type: ${elf[16] === 1 ? 'Relocatable' : 'Unknown'}`);
-    console.log(`\n=== Compilation Complete ===`);
-    console.log(`The generated object file can be linked with:`);
-    console.log(`  gcc ${outputPath} -o output`);
+  }
+
+  // Phase 7: Linking
+  if (linkOutputPath) {
+    logPhase('Phase 7: Linking', options);
+    const exe = linkObjectFiles([elf]);
+    await fsWriteFile(linkOutputPath, Buffer.from(exe));
+    await fsChmod(linkOutputPath, 0o755);
+    if (options.verbose) {
+      console.log(`Executable written to ${linkOutputPath}`);
+    }
   }
 }
 
